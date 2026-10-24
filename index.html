@@ -1,0 +1,2107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0f1115">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Inventário — Contagem de Estoque</title>
+<link rel="manifest" href="manifest.json">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+:root{
+  --bg:#0d0f14; --panel:#151922; --panel2:#1c212c; --line:#28303e;
+  --tx:#e9edf4; --mut:#8d97a8; --acc:#e02b45; --acc2:#ff4d68;
+  --ok:#12b981; --warn:#f59e0b; --blue:#3b82f6;
+  --r:14px; --safe: env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%;-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg); color:var(--tx); overscroll-behavior:none;
+  font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,system-ui,sans-serif;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+/* iOS dá zoom sozinho em qualquer campo com fonte menor que 16px:
+   no meio da contagem isso desloca a tela inteira a cada toque.
+   Precisa vir depois do font:inherit acima, que zera o tamanho. */
+input,select,textarea{font-size:16px}
+button{cursor:pointer;border:0;background:none}
+.hide{display:none!important}
+
+/* ---------- layout ---------- */
+#app{display:flex;flex-direction:column;height:100dvh}
+header{
+  display:flex;align-items:center;gap:10px;padding:10px 14px;
+  background:linear-gradient(180deg,#171c26,#12161e);border-bottom:1px solid var(--line);
+  padding-top:calc(10px + env(safe-area-inset-top,0px));flex:0 0 auto;
+}
+.logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--acc),#8b1030);
+  display:grid;place-items:center;font-size:15px;flex:0 0 auto}
+.htitle{font-weight:700;font-size:15px;letter-spacing:.2px;line-height:1.1}
+.hsub{font-size:11px;color:var(--mut);line-height:1.1;margin-top:2px}
+.spacer{flex:1}
+.userchip{display:flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);
+  border-radius:999px;padding:5px 10px;font-size:12px;max-width:130px}
+.userchip b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 14px 20px}
+nav{
+  display:flex;flex:0 0 auto;background:#12161e;border-top:1px solid var(--line);
+  padding-bottom:var(--safe);
+}
+nav button{flex:1;padding:9px 2px 8px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  color:var(--mut);font-size:10.5px;font-weight:600;letter-spacing:.2px;border-top:2px solid transparent}
+nav button .ic{font-size:18px;line-height:1}
+nav button.on{color:var(--tx);border-top-color:var(--acc)}
+nav button.on .ic{filter:drop-shadow(0 0 8px rgba(224,43,69,.6))}
+
+/* ---------- pieces ---------- */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
+.lbl{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mut);margin-bottom:7px;display:block}
+.inp{width:100%;background:var(--panel2);border:1.5px solid var(--line);border-radius:11px;padding:13px 14px;
+  outline:none;transition:border-color .12s}
+.inp:focus{border-color:var(--acc)}
+.inp::placeholder{color:#5d6879}
+.big{font-size:26px;font-weight:800;letter-spacing:1px;text-align:center;padding:16px 14px;font-variant-numeric:tabular-nums}
+.btn{display:flex;align-items:center;justify-content:center;gap:7px;background:var(--panel2);
+  border:1px solid var(--line);border-radius:11px;padding:12px 14px;font-weight:650;font-size:14px;width:100%}
+.btn:active{transform:scale(.985)}
+.btn.pri{background:linear-gradient(180deg,var(--acc2),var(--acc));border-color:#ff5f79;color:#fff;
+  box-shadow:0 5px 18px -6px rgba(224,43,69,.8)}
+.btn.ok{background:linear-gradient(180deg,#16d29a,var(--ok));border-color:#2ee0aa;color:#04241a;
+  box-shadow:0 5px 18px -6px rgba(18,185,129,.7)}
+.btn.gh{background:transparent}
+.btn.sm{padding:9px 12px;font-size:13px;width:auto}
+.btn.dg{color:#ff6b81;border-color:#4a2430}
+.row{display:flex;gap:9px}
+.row>*{flex:1}
+.muted{color:var(--mut)}
+.tiny{font-size:11.5px}
+.sec-title{font-size:12px;font-weight:750;letter-spacing:.9px;text-transform:uppercase;color:var(--mut);
+  margin:18px 2px 9px}
+.sec-title:first-child{margin-top:2px}
+.pill{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:999px;
+  padding:3px 9px;font-size:10.5px;font-weight:700;letter-spacing:.4px;white-space:nowrap}
+.pill.kg{background:#0d2f4d;border-color:#1d5c8f;color:#8fd0ff}
+.pill.un{background:#3a2a08;border-color:#7a5a12;color:#ffd479}
+.pill.ac{background:#3d1420;border-color:#7d2338;color:#ffa3b3}
+.empty{text-align:center;padding:44px 18px;color:var(--mut)}
+.empty .ic{font-size:40px;opacity:.35;display:block;margin-bottom:10px}
+
+/* ---------- contagem ---------- */
+.hero{background:linear-gradient(160deg,#1d2432,#141821);border:1px solid var(--line);
+  border-radius:16px;padding:15px;margin-bottom:12px}
+.scanline{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.scanline .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok);
+  animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.found{border:1.5px solid #2c5f4a;background:linear-gradient(160deg,#0f2a22,#0e1a18);border-radius:14px;
+  padding:14px;margin-bottom:12px;animation:pop .18s ease-out}
+@keyframes pop{from{transform:scale(.97);opacity:0}to{transform:scale(1);opacity:1}}
+.found .nm{font-size:19px;font-weight:800;line-height:1.25;margin-bottom:8px}
+.found .meta{display:flex;flex-wrap:wrap;gap:6px}
+.found .cod{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--mut);margin-bottom:8px}
+.qtywrap{position:relative}
+.qtywrap .un{position:absolute;right:16px;top:50%;transform:translateY(-50%);font-weight:800;
+  font-size:16px;color:var(--acc2);pointer-events:none}
+.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:9px}
+.keys button{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px 4px;
+  font-weight:700;font-size:13.5px}
+.sug{margin-top:10px;max-height:56dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  border:1px solid var(--line);
+  border-radius:12px;background:var(--panel2);animation:pop .14s ease-out}
+.sug .hint{padding:8px 12px;font-size:11px;color:var(--mut);border-bottom:1px solid var(--line);
+  font-weight:650;letter-spacing:.3px}
+.sug button{display:block;width:100%;text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
+.sug button:last-child{border-bottom:0}
+.sug button.sel{background:#2e1a21;box-shadow:inset 3px 0 0 var(--acc)}
+.sug .l1{display:flex;align-items:center;gap:8px}
+.sug .nm{font-weight:650;font-size:13.5px;line-height:1.25;flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sug .l2{font-size:11px;color:var(--mut);margin-top:3px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sug mark{background:transparent;color:var(--acc2);font-weight:800}
+.err{border:1.5px solid #6b2233;background:#2a1119;border-radius:14px;padding:14px;margin-bottom:12px;
+  animation:shake .3s}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:12px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 8px;text-align:center}
+.stat .v{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat .k{font-size:10px;color:var(--mut);letter-spacing:.5px;text-transform:uppercase;margin-top:3px;font-weight:650}
+
+/* ---------- listas ---------- */
+.item{display:flex;align-items:center;gap:11px;background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:11px 12px;margin-bottom:7px}
+.item .l{flex:1;min-width:0}
+.item .nm{font-weight:650;font-size:13.5px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .sub{font-size:11px;color:var(--mut);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .r{text-align:right;flex:0 0 auto}
+.item .q{font-weight:800;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.grp{display:flex;align-items:center;gap:8px;margin:16px 2px 8px;font-size:12px;font-weight:750;
+  letter-spacing:.7px;text-transform:uppercase;color:var(--mut)}
+.grp:before{content:"";flex:1;height:1px;background:var(--line);order:2}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;background:var(--panel2);border:1px solid var(--line);border-radius:999px;
+  padding:7px 13px;font-size:12.5px;font-weight:650;color:var(--mut)}
+.chip.on{background:var(--acc);border-color:var(--acc2);color:#fff}
+.bar{height:5px;background:var(--panel2);border-radius:99px;overflow:hidden;margin-top:7px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--ok),#5ee0b8);border-radius:99px}
+
+/* ---------- toast / modal ---------- */
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(78px + var(--safe));z-index:60;
+  display:flex;flex-direction:column;gap:7px;align-items:center;pointer-events:none;width:calc(100% - 28px)}
+.tst{background:#1e2836;border:1px solid #33415a;border-radius:11px;padding:10px 15px;font-size:13.5px;
+  font-weight:650;box-shadow:0 10px 30px -8px #000;animation:up .2s;max-width:100%}
+.tst.ok{background:#0d3a2c;border-color:#1c7a5c;color:#8ff0d0}
+.tst.er{background:#3d1420;border-color:#7d2338;color:#ffb3c0}
+@keyframes up{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}
+/* ---------- portão de licença ---------- */
+#gate{position:fixed;inset:0;z-index:95;background:radial-gradient(120% 90% at 50% 0%,#20121a,#07090d 70%);
+  display:flex;align-items:center;justify-content:center;padding:22px;overflow-y:auto}
+body.travado #app{filter:blur(7px) saturate(.5);pointer-events:none;user-select:none}
+.gatebox{width:100%;max-width:400px;text-align:center;
+  background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:26px 22px;
+  box-shadow:0 26px 70px -22px #000;animation:pop .22s ease-out}
+.gatebox h2{margin:12px 0 6px;font-size:21px;letter-spacing:.2px}
+.gatelogo{width:58px;height:58px;margin:0 auto;border-radius:17px;
+  background:linear-gradient(135deg,var(--acc),#6d0c24);display:grid;place-items:center;font-size:27px;
+  box-shadow:0 10px 28px -10px var(--acc)}
+.gatebox .inp{text-align:center}
+.gatebox .btn{margin-top:12px}
+.ovl{position:fixed;inset:0;background:rgba(4,6,10,.72);backdrop-filter:blur(3px);z-index:70;
+  display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--panel);border:1px solid var(--line);border-radius:18px 18px 0 0;padding:18px;
+  width:100%;max-width:560px;max-height:88dvh;overflow-y:auto;padding-bottom:calc(18px + var(--safe));
+  animation:up .2s}
+.sheet h3{margin:0 0 4px;font-size:17px}
+@media(min-width:640px){
+  main{max-width:760px;margin:0 auto;width:100%}
+  header{justify-content:center}
+  .ovl{align-items:center}
+  .sheet{border-radius:18px;max-width:520px}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header>
+    <div class="logo">🥩</div>
+    <div>
+      <div class="htitle">Inventário</div>
+      <div class="hsub" id="hsub">Contagem de estoque</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="userchip" onclick="askUser()">👤 <b id="uname">—</b></button>
+  </header>
+
+  <main id="main"></main>
+
+  <nav>
+    <button data-v="count" class="on"><span class="ic">⌨️</span>Contar</button>
+    <button data-v="prods"><span class="ic">📦</span>Produtos</button>
+    <button data-v="hist"><span class="ic">🕑</span>Histórico</button>
+    <button data-v="rep"><span class="ic">📊</span>Relatório</button>
+    <button data-v="cfg"><span class="ic">⚙️</span>Ajustes</button>
+  </nav>
+</div>
+
+<div id="gate" class="hide"></div>
+<div id="toast"></div>
+<div id="modal"></div>
+
+<script>
+/* =======================================================================
+   INVENTÁRIO — App de contagem de estoque (açougues / frigoríficos / CDs)
+   Arquitetura em camadas:  DB (IndexedDB) -> Store (regras) -> UI (views)
+   ======================================================================= */
+
+const SEED = [{"codigo":"0000000000112","nome":"ASA DE FRANGO GRANEL","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000000117","nome":"CORACAOZINHO DE FRANGO","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000021401","nome":"COXA DE FRANGO","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000000092","nome":"COXA E SOBRE COXA FRANGO","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000006941","nome":"COXA E SOBRECOXA FRANGO SEM OSSO","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000000895","nome":"COXINHA DE ASA","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000000901","nome":"FIGUINHO DE FRANGO","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000000119","nome":"FILET DE PEITO FRANGO","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000003537","nome":"FILEZINHO DE SASSAMI","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000007047","nome":"FRANGO CAIPIRA","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000006804","nome":"FRANGO GALETO","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000000120","nome":"FRANGO INTEIRO","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000021616","nome":"GALINHA GORDA","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000006002","nome":"MEIO DA ASA.","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000000131","nome":"MOELA","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000000027","nome":"PEITO DE FRANGO COM OSSO","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000000144","nome":"PESCOCO DE PERU","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000002263","nome":"PEZINHO DE FRANGO","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000002164","nome":"SAMBIQUIRA KG","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000013369","nome":"SOBRECOXA DE FRANGO.","un":"KG","fam":"BALCÃO","dep":"AVES"},{"codigo":"0000000000001","nome":"ACEM","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000002","nome":"ALCATRA","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000003","nome":"ALCATRA C PICANHA","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000005","nome":"ALCATRA PECA INTEIRA","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000002981","nome":"BIFE DO VAZIO BOVINO","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000021944","nome":"BOCHECHA BOVINA","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000006","nome":"CAPA DE FILET","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000001960","nome":"CARNE DE SOL","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000007","nome":"CHA DE DENTRO","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000009","nome":"CHA DE FORA","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000011","nome":"CONTRA FILET","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000013","nome":"CONTRA FILET PECA INTEIRA","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000014","nome":"COSTELA DE BOI EM TIRA","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000015","nome":"COSTELAO","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000093","nome":"CUPIM BOVINO","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000727","nome":"FRALDINHA BOVINA","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000019484","nome":"GORDURA BOVINA","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000023","nome":"LAGARTINHO","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000024","nome":"LAGARTO","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000025","nome":"MACA DE PEITO","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000005715","nome":"MAMINHA","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000028","nome":"MIOLO DE ACEM","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000029","nome":"MIOLO DE ALCATRA","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000030","nome":"MIOLO DE PA","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000031","nome":"MUSCULO DIANTEIRO","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000032","nome":"MUSCULO TRASEIRO","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000006286","nome":"OSSO BOVINO","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000006538","nome":"OSSOBUCO","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000000033","nome":"PA COMPLETA","un":"KG","fam":"BALCÃO","dep":"BOVINOS"},{"codigo":"0000000020756","nome":"CHOURISSELA","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"0000000011969","nome":"LINGUICA SUINA DE PERNIL DEFUMADA","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"0000000000121","nome":"LINGUICA CALABRESA","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"0000000000932","nome":"LINGUICA CALABRESA FINA","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"7898510881362","nome":"LINGUICA CIA CARNES 700 G","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"0000000002097","nome":"LINGUICA CUIABANA","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"0000000002752","nome":"LINGUICA DE FRANGO GOMO KG","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"0000000029964","nome":"LINGUICA DE FRANGO FINA KG","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"0000000020824","nome":"LINGUICA PAIO","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"0000000000125","nome":"LINGUICA SUINA DEFUMADA","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"0000000000128","nome":"LINGUICA TOSCANA CIA CARNES","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"7898907631266","nome":"MORTADELA C/PISTACHE 150GR","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"0000000000133","nome":"SALSICHA","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"0000000005975","nome":"SALSICHAO.","un":"KG","fam":"BALCÃO","dep":"EMBUTIDOS"},{"codigo":"0000000000089","nome":"COLMEIA","un":"KG","fam":"BALCÃO","dep":"MIUDEZAS"},{"codigo":"0000000000090","nome":"CORACAO DE BOI","un":"KG","fam":"BALCÃO","dep":"MIUDEZAS"},{"codigo":"0000000000094","nome":"DOBRADINHA","un":"KG","fam":"BALCÃO","dep":"MIUDEZAS"},{"codigo":"0000000022774","nome":"DOBRADINHA CORTADA","un":"KG","fam":"BALCÃO","dep":"MIUDEZAS"},{"codigo":"0000000000095","nome":"FIGADO BOVINO","un":"KG","fam":"BALCÃO","dep":"MIUDEZAS"},{"codigo":"0000000000096","nome":"LINGUA","un":"KG","fam":"BALCÃO","dep":"MIUDEZAS"},{"codigo":"0000000003018","nome":"LINGUA RECHEADA","un":"KG","fam":"BALCÃO","dep":"MIUDEZAS"},{"codigo":"0000000000099","nome":"MOCOTO","un":"KG","fam":"BALCÃO","dep":"MIUDEZAS"},{"codigo":"0000000000100","nome":"RABADA BOVINA","un":"KG","fam":"BALCÃO","dep":"MIUDEZAS"},{"codigo":"0000000004282","nome":"TERNEIRO LINGUA LIMPA BOI","un":"KG","fam":"BALCÃO","dep":"MIUDEZAS"},{"codigo":"7898967392091","nome":"BEM FRESCO FILE DE SALMAO C/PELE CONG 480 GRAMAS","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"7898552604578","nome":"CAMARAO ROSA G 400 GRAMAS","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"7897966392187","nome":"CASCUDO EM POSTA CENTER PESCADOS-PACOTE 500GR","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"0000000001335","nome":"FILE DE SURUBIM","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"0000000001328","nome":"FILE DE TILAPIA","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"0602883342507","nome":"FILE DE TILAPIA - TOP FISH - PACOTE 500GR","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"7896218802269","nome":"FILE DE TILAPIA PESQUALI PACOTE 400G","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"7896252213441","nome":"FILE DE TILAPIA PESQUALI PACOTE 800 GR","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"7898959250422","nome":"FILE TILAPIA RIVERA 400GR","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"7898373971507","nome":"FORMADOS DE PEIXE EMPANADOS BARTA PCT 700G","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"0609963735327","nome":"ISCA DE TILAPIA EMPANADA FISH MARIA 300GR","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"0609963735303","nome":"ISCA DE TILAPIA EMPANADA FISH MARIA FOOD 300GR","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"0000000002455","nome":"PEIXE CASCUDO / PIRAMUTABA","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"0000000000010","nome":"PEIXE FILE DE MERLUZA","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"7899947805532","nome":"PEIXE PIRAMUTABA FILE 500 GR","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"7898353176618","nome":"PEIXE PIRAMUTABA POSTA C/PELE PCT 1 KG","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"7898177100219","nome":"PEIXE PIRAMUTABA POSTA S/PELE PCT 1 KG","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"0000000029384","nome":"PEIXE PIRAMUTABA S/PELE FILE PIRAMUTABA KG","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"0000000029391","nome":"PESQUALI FILE SALMAO EM PEDACOS CONGELADO","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"0000000002516","nome":"SALMAO PREMIUM","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"0070341366134","nome":"SR CAMAFEU CAMARAO EMP C REQUEIJAO 300 GR","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"0609963735365","nome":"SR CAMAFEU CAMARAO EMP C REQUEIJAO 600GR","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"7897966392149","nome":"SURUBIM EM POSTA CENTER PESCADOS-PACOTE 500GR","un":"KG","fam":"BALCÃO","dep":"PEIXES E FRUTOS DO MAR"},{"codigo":"0000000030311","nome":"BACON CUBOS KG","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000628","nome":"BACON FATIADO PORCIONADO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000113","nome":"BACON MANTA","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000051","nome":"BANHA","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000833","nome":"BISTECA","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000002943","nome":"CARNE REF. DE SUINO C/ OSSO (MEIA CARCACA)","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000055","nome":"COPA LOMBO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000056","nome":"COSTELINHA","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000004","nome":"COSTELINHA DEFUMADA","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000021","nome":"JOELHO DEFUMADO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000059","nome":"JOELHO FRESCO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000012331","nome":"LEITAO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000060","nome":"LOMBO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000002268","nome":"LOMBO DEFUMADO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000062","nome":"ORELHA DE PORCO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000006293","nome":"OSSO SUINO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000063","nome":"PAZINHA","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000066","nome":"PERNIL S OSSO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000067","nome":"PERNIL SUINO C/ OSSO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000068","nome":"PEZINHO DE PORCO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000069","nome":"RABINHO DE PORCO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000071","nome":"RETALHO SUINO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000027977","nome":"STINCO SUINO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000072","nome":"SUA","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000097","nome":"SUA ESPECIAL","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000073","nome":"TOUCINHO COMUM","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000000075","nome":"TOUCINHO ESPECIAL","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000002813","nome":"TOUCINHO INTEIRO","un":"KG","fam":"BALCÃO","dep":"SUINOS"},{"codigo":"0000000007009","nome":"ASA DESOSSADA RECHEADA","un":"KG","fam":"GONDOLA","dep":"AVES"},{"codigo":"0000000007016","nome":"FRANGO DESOSSADO E RECHEADO","un":"KG","fam":"GONDOLA","dep":"AVES"},{"codigo":"0000000007306","nome":"MEDALHAO FILE DE FRANGO","un":"KG","fam":"GONDOLA","dep":"AVES"},{"codigo":"7898973606182","nome":"TULIPAS RECHEADAS CALABREZA E REQUEIJAO 500 G","un":"KG","fam":"GONDOLA","dep":"AVES"},{"codigo":"7898996046354","nome":"COSTELA EM CASA CUPIM C/QUEIJO 300GR","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"7898996546700","nome":"COSTELA EM CASA BOLINHO CARNE SECA C/QUEIJO 300G","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"7898996046309","nome":"COSTELA EM CASA COM QUEIJO 450 GR","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"7898996046347","nome":"COSTELA EM CASA COM QUEIJO DESFIADA 300 GR","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"7898996046323","nome":"COSTELA EM CASA CUPIM COM QUEIJO 300GR","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"0000000006576","nome":"PICANHA A PULL","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"0000000022651","nome":"PICANHA A PULL RESFRIADA","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"0000000022781","nome":"PICANHA A GOLD BEEF RESFRIADA","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"0000000007054","nome":"PICANHA BRASA","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"0000000003803","nome":"PICANHA DIA DIA","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"0000000012225","nome":"PICANHA FRIGOVITTA","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"0000000028721","nome":"PICANHA GOLD BEEF","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004046","nome":"PICANHA PLENA BONNE","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"0000000022767","nome":"PICANHA RESF PLENA CHEF","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"0000000001694","nome":"PICANHA SUPREMO PRIME","un":"KG","fam":"GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004169","nome":"CARRET DE CORDEIRO","un":"KG","fam":"GONDOLA","dep":"CARNES EXOTICAS"},{"codigo":"0000000024679","nome":"CARRET DE CORDEIRO MONTE CARLO","un":"KG","fam":"GONDOLA","dep":"CARNES EXOTICAS"},{"codigo":"5602772055353","nome":"LOMBO DE BACALHAU DESSALGADO CONGELADO","un":"KG","fam":"GONDOLA","dep":"CARNES EXOTICAS"},{"codigo":"0000000011624","nome":"PALETA DE CORDEIRO","un":"KG","fam":"GONDOLA","dep":"CARNES EXOTICAS"},{"codigo":"0000000004138","nome":"PERNIL DE CORDEIRO","un":"KG","fam":"GONDOLA","dep":"CARNES EXOTICAS"},{"codigo":"7908267522842","nome":"LINGUICA COSTELA APIMENTADA CARA PRETA 300G","un":"KG","fam":"GONDOLA","dep":"EMBUTIDOS"},{"codigo":"7899566315788","nome":"LINGUICA COSTELA PLENA 300G","un":"KG","fam":"GONDOLA","dep":"EMBUTIDOS"},{"codigo":"7898229384772","nome":"LINGUICA PETISCO SAUDALI 400 GRAMAS","un":"KG","fam":"GONDOLA","dep":"EMBUTIDOS"},{"codigo":"7891515549398","nome":"PERDIGAO NA BRASA SOBRECOXA MOSTARDA SHOYU 800G","un":"KG","fam":"GONDOLA","dep":"EMBUTIDOS"},{"codigo":"7898312044279","nome":"SALSICHAO RESFRIADO AVIVAR 500GR","un":"KG","fam":"GONDOLA","dep":"EMBUTIDOS"},{"codigo":"0000000023696","nome":"SAUDALI LINGUICA PETISCO COZIDA KG","un":"KG","fam":"GONDOLA","dep":"EMBUTIDOS"},{"codigo":"7898229383973","nome":"SAUDALI LINGUICA TIPO CALABRESA DEFUMADA.500GR","un":"KG","fam":"GONDOLA","dep":"EMBUTIDOS"},{"codigo":"0000000028820","nome":"ADEEL ANCHO SUINO RESFRIADO","un":"KG","fam":"GONDOLA","dep":"SUINOS"},{"codigo":"7898961618982","nome":"ADEEL COSTELINHA PETISCO TEMPERADA 600 GR","un":"KG","fam":"GONDOLA","dep":"SUINOS"},{"codigo":"7898996046385","nome":"COSTELA EM CASA ANCHO SUINO COM QUEIJO 450 GR","un":"KG","fam":"GONDOLA","dep":"SUINOS"},{"codigo":"0000000006873","nome":"PICANHA SUINA DEFUMADA","un":"KG","fam":"GONDOLA","dep":"SUINOS"},{"codigo":"0000000029407","nome":"PICANHA SUINA TEMP ADORA KG","un":"KG","fam":"GONDOLA","dep":"SUINOS"},{"codigo":"0000000001625","nome":"PICANHA SUINA TEMP CIA CARNE KG","un":"KG","fam":"GONDOLA","dep":"SUINOS"},{"codigo":"0000000002776","nome":"SOBREPALETA DEFUMADA CIA CARNES S/ OSSO","un":"KG","fam":"GONDOLA","dep":"SUINOS"},{"codigo":"0000000018746","nome":"TERNEIRO CORACAOZINHO DE FRANGO TEMPERADO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"AVES"},{"codigo":"0000000007290","nome":"TERNEIRO COXINHA DA ASA TEMPERADA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"AVES"},{"codigo":"0000000005906","nome":"TERNEIRO FRANGO A PASSARINHO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"AVES"},{"codigo":"0000000014755","nome":"TERNEIRO GALETO DESSOSADO E TEMPERADO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"AVES"},{"codigo":"0000000006545","nome":"TERNEIRO ROCAMBOLE FRANGO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"AVES"},{"codigo":"0000000006064","nome":"TERNEIRO SOBRECOXA DESSOSADA RECHEADA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"AVES"},{"codigo":"0000000005470","nome":"TERNEIRO SOBRECOXA DESSOSADA TEMPERADA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"AVES"},{"codigo":"0000000005302","nome":"TERNEIRO TULIPA TEMPERADA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"AVES"},{"codigo":"0000000003964","nome":"TERNEIRO BIFE CHORIZO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000005111","nome":"TERNEIRO ALCATRA RECHEADA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000006392","nome":"TERNEIRO ALMONDEGAS BOVINO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004640","nome":"TERNEIRO ASSADO DE TIRAS","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000003926","nome":"TERNEIRO BABY BEEF","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004695","nome":"TERNEIRO BANANINHA DE CONTRA FILE","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004626","nome":"TERNEIRO BIFE ANCHO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004589","nome":"TERNEIRO BIFE SHOULDER","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000003933","nome":"TERNEIRO BOMBOM DE ALCATRA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004800","nome":"TERNEIRO CAPA DE FILET","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004275","nome":"TERNEIRO CONTRA FILET","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000013666","nome":"TERNEIRO COSTELA DE BOI 4 RIPAS","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000005708","nome":"TERNEIRO COSTELA DESOSSADA RECHEADA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000005647","nome":"TERNEIRO COSTELA TEMPERADA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000006491","nome":"TERNEIRO CUPIM FATIADO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000030281","nome":"TERNEIRO CUPIM TEMPERADO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004824","nome":"TERNEIRO DENVER","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000003940","nome":"TERNEIRO FILE MIGNON","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000019187","nome":"TERNEIRO FILE MIGNON TORNEDOR","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004671","nome":"TERNEIRO FLAT IRON","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004268","nome":"TERNEIRO FRALDINHA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000017541","nome":"TERNEIRO FRALDINHA RED","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000005609","nome":"TERNEIRO GRANITO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000006033","nome":"TERNEIRO HAMBURGUER ANGUS TEMP","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000006026","nome":"TERNEIRO HAMBURGUER ANGUS TRADTEMP KG","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000005050","nome":"TERNEIRO KAFTA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000005517","nome":"TERNEIRO LAGARTO TEMPERADO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004114","nome":"TERNEIRO MAMINHA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004572","nome":"TERNEIRO PEIXINHO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000003919","nome":"TERNEIRO PICANHA 2212","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000015295","nome":"TERNEIRO PICANHA DIANTEIRO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004657","nome":"TERNEIRO PICANHA FATIADA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004565","nome":"TERNEIRO PRIME RIB","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000005128","nome":"TERNEIRO RED SHOULDER","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000015325","nome":"TERNEIRO RIB STEAK","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000006279","nome":"TERNEIRO ROCAMBOLE BOV. BACON","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004541","nome":"TERNEIRO SHORT RIB","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000021500","nome":"TERNEIRO STEAK PICANHA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000021463","nome":"TERNEIRO STINCO BOVINO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004558","nome":"TERNEIRO T - BONE","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000006835","nome":"TERNEIRO THICK SKIRT - DIAFRAGMA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000004817","nome":"TERNEIRO TOMAHAWK","un":"KG","fam":"TERNEIRO GONDOLA","dep":"BOVINOS"},{"codigo":"0000000021579","nome":"ESPETINHO UN FILE DE FRANGO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000005067","nome":"ESPETINHO UN BOI","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000005081","nome":"ESPETINHO UN CORACAO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000021234","nome":"ESPETINHO UN COSTELAO GAUCHO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000020404","nome":"ESPETINHO UN KAFTA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000021586","nome":"ESPETINHO UN LINGUICA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000005753","nome":"ESPETINHO UN MEDALHAO DE FRANGO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000021432","nome":"ESPETINHO UN PORCO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000022422","nome":"ESPETINHO UN ROMEU E JULIETA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000006477","nome":"ESPETINHO UN SALSICHAO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000022378","nome":"ESPETINHO UN TULIPA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000004978","nome":"TERNEIRO ESPETINHO BOVINO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000029414","nome":"TERNEIRO ESPETINHO CARNE DE SOL","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000005203","nome":"TERNEIRO ESPETINHO CORACAO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000018821","nome":"TERNEIRO ESPETINHO CORACAO COM BACON","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000006774","nome":"TERNEIRO ESPETINHO MEDALHAO BATATA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000005432","nome":"TERNEIRO ESPETINHO MEDALHAO FRANGO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000006781","nome":"TERNEIRO ESPETINHO MEDALHAO MUSSARELA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000003834","nome":"TERNEIRO ESPETINHO ROMEU E JULIETA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000004992","nome":"TERNEIRO ESPETINHO SUINO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"ESPETINHOS"},{"codigo":"0000000005999","nome":"TERNEIRO KIT CHURRASCO A 10 PESSOAS.","un":"KG","fam":"TERNEIRO GONDOLA","dep":"KITS"},{"codigo":"0000000006408","nome":"TERNEIRO KIT CHURRASCO B 10 PESSOAS","un":"KG","fam":"TERNEIRO GONDOLA","dep":"KITS"},{"codigo":"0000000000611","nome":"TERNEIRO KIT CHURRASCO C 10 PESSOAS","un":"KG","fam":"TERNEIRO GONDOLA","dep":"KITS"},{"codigo":"0000000021968","nome":"TERNEIRO KIT CHURRASCO GAUCHO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"KITS"},{"codigo":"0000000022118","nome":"TERNEIRO KIT CHURRASCO PREMIUM.","un":"KG","fam":"TERNEIRO GONDOLA","dep":"KITS"},{"codigo":"0000000017428","nome":"TERNEIRO KIT FEIJOADA FRESCO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"KITS"},{"codigo":"0000000028516","nome":"TERNEIRO KIT FEIJOADA PE,RABO ORELHA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"KITS"},{"codigo":"0000000003681","nome":"TERNEIRO KIT FEIJOADA SALGADA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"KITS"},{"codigo":"0000000006262","nome":"TERNEIRO KIT FEIJOADA.","un":"KG","fam":"TERNEIRO GONDOLA","dep":"KITS"},{"codigo":"0000000029186","nome":"TERNEIRO KIT HAMBURGUER COMPLETO 6X6","un":"KG","fam":"TERNEIRO GONDOLA","dep":"KITS"},{"codigo":"0000000017527","nome":"TERNEIRO KIT SEMANAL CASA GRANDE","un":"KG","fam":"TERNEIRO GONDOLA","dep":"KITS"},{"codigo":"0000000017534","nome":"TERNEIRO KIT SEMANAL COMPLETO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"KITS"},{"codigo":"0000000007108","nome":"TERNEIRO KIT SEMANAL ESSENCIAL","un":"KG","fam":"TERNEIRO GONDOLA","dep":"KITS"},{"codigo":"0000000006866","nome":"TERNEIRO LINGUICA ALHO PORO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000015288","nome":"TERNEIRO LINGUICA APIMENTADA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000019132","nome":"TERNEIRO LINGUICA JILO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000023061","nome":"TERNEIRO LINGUICA SUINA DE COSTELINHA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000006149","nome":"TERNEIRO LINGUICA C/ BACON","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000028813","nome":"TERNEIRO LINGUICA CHEIO VERDE","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000024945","nome":"TERNEIRO LINGUICA DE LOMBO SUINA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000012256","nome":"TERNEIRO LINGUICA PIMENTA BIQUINHO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000006057","nome":"TERNEIRO LINGUICA REC. QUEIJO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000029421","nome":"TERNEIRO LINGUICA SUINA FINA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000022446","nome":"TERNEIRO LINGUICA TOMATE SECO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000006040","nome":"TERNEIRO LINGUICA TRADICIONAL","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000017565","nome":"TERNEIRO LINGUICA TRADICIONAL EMBALADA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000020381","nome":"TERNEIRO CARRET SUINO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000023917","nome":"TERNEIRO COPA LOMBO TEMPERADO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000001593","nome":"TERNEIRO FILEZINHO SUINO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000015202","nome":"TERNEIRO LOMBINHO SUINO AROMATICO.","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000003001","nome":"TERNEIRO LOMBO RECHEADO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000005524","nome":"TERNEIRO LOMBO TEMPERADO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000005913","nome":"TERNEIRO PANCETA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000015929","nome":"TERNEIRO PICANHA SUINA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000007023","nome":"TERNEIRO PICOLE MINEIRO - COSTELINHA BARRIGA","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000000026","nome":"TERNEIRO PORK RIBS","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000020374","nome":"TERNEIRO PRIME RIB SUINO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0000000020350","nome":"TERNEIRO TOMAHAWK SUINO","un":"KG","fam":"TERNEIRO GONDOLA","dep":"SUINOS LINGUIÇAS"},{"codigo":"0319913423845","nome":"BANHA DE PORCO CAIPIRA 800 ML.","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"7898941863500","nome":"BANHA DE PORCO DUOFOOD 800GR.","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000003094","nome":"CAMBUIENSE QUEIJO DE COALHO","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000002561","nome":"LACTOMINAS SABOROSO QUEIJO PARMESAO","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000025195","nome":"QUEIJO CABACINHA TRADICIONAL MUSSARELA 400 GR","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000006583","nome":"QUEIJO CACULINHA BOLA BRANCA","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000007030","nome":"QUEIJO CACULINHA NOZINHO MEDIO","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000001687","nome":"QUEIJO COALHO ESPETO","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000022040","nome":"QUEIJO KIT 4 QUEIJOS","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000022330","nome":"QUEIJO KIT SOH MINAS","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000028554","nome":"QUEIJO MINAS ARTESANAL","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000005685","nome":"QUEIJO MINAS MEIA CURA","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000003780","nome":"QUEIJO MINAS PADRAO","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000027656","nome":"QUEIJO MINAS PECA","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000001748","nome":"QUEIJO MUSSARELA NOZINHO","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000008679","nome":"QUEIJO MUSSARELA PALITO","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000008686","nome":"QUEIJO MUSSARELA PALITO C/ ERVAS","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000029438","nome":"QUEIJO MUSSARELA TEMP TRANCA CASCAVEL","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000001724","nome":"QUEIJO MUSSARELA TRANCA","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000028219","nome":"QUEIJO MUSSARELA TRANCA DEFUMADA CASCAVEL","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000001731","nome":"QUEIJO MUSSARELA TRANCA C/ ERVAS","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000022798","nome":"QUEIJO MUSSARELA TRUFADO C/REQUEIJAO SOH MINAS","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000006811","nome":"QUEIJO NOZINHO BRANCO","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000022026","nome":"QUEIJO NOZINHO DEFUMADO","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000022033","nome":"QUEIJO NOZINHO DEFUMADO TEMPERADO","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000006828","nome":"QUEIJO NOZINHO TEMPERADO","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000006118","nome":"QUEIJO PROVOLONE","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000029445","nome":"QUEIJO PROVOLONE DEFUMADO C/LOMBO","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000029452","nome":"QUEIJO PROVOLONE TEMP C/LOMBO","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000022347","nome":"QUEIJO QUATRO QUEIJOS SOH MINAS","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000022057","nome":"QUEIJO TIPO TILSIT","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000026932","nome":"SANTA RITA QUEIJO MUSSARELA BOLINHA","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"0000000026925","nome":"SANTA RITA REQUEIJAO BARRA","un":"KG","fam":"MERCEARIA","dep":"BANHA E QUEIJOS"},{"codigo":"7898946686098","nome":"DONA BETH PAO DE CHOCOLATE","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7890300702925","nome":"FAZ E FORNO PAO HAMB.BRIOCHE 300 GR C/4","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7895098922005","nome":"PAO DE ALHO BEAGO 4 QUEIJOS","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7895098922043","nome":"PAO DE ALHO BEAGO ALHO PORO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7895098922081","nome":"PAO DE ALHO BEAGO BACON COM CHEDDAR","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7895098922029","nome":"PAO DE ALHO BEAGO CALABRESA","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7895098922036","nome":"PAO DE ALHO BEAGO FRANGO COM REQUEIJAO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7895098921985","nome":"PAO DE ALHO BEAGO TOMATE SECO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7895099483598","nome":"PAO DE ALHO BEAGO TRADICIONAL GOURMET","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7899538801318","nome":"PAO DE ALHO BRASA DE MINAS ALHO PORO C/QUEIJO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7899538801288","nome":"PAO DE ALHO BRASA DE MINAS COSTELA BOVINA","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7899538801301","nome":"PAO DE ALHO BRASA DE MINAS FRANGO C/MUSSARELA","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7899538801332","nome":"PAO DE ALHO BRASA DE MINAS LINGUICA DEFUMADA","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7899538801295","nome":"PAO DE ALHO BRASA DE MINAS TOMATE SECO PROVOLONE","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7899538801325","nome":"PAO DE ALHO BRASA DE MINAS TRADICIONALC/MUSSARELA","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898946686081","nome":"PAO DE ALHO DONA BETH 4QUEIJOS C/ERVAS FINAS","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898946686036","nome":"PAO DE ALHO DONA BETH ALHO CEBOLA COM QUEIJO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898946686012","nome":"PAO DE ALHO DONA BETH ALHO COM QUEIJO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898946686043","nome":"PAO DE ALHO DONA BETH ALHO PICANTE","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898946686067","nome":"PAO DE ALHO DONA BETH AZEITONA COM QUEIJO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898946686159","nome":"PAO DE ALHO DONA BETH BACON COM CHEDDAR","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898946686111","nome":"PAO DE ALHO DONA BETH FRANGO C/REQUEIJAO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898946686074","nome":"PAO DE ALHO DONA BETH PEPPERONI COM QUEIJO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898946686104","nome":"PAO DE ALHO DONA BETH PORO C/QUEIJO SUICO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898946686142","nome":"PAO DE ALHO DONA BETH TOMATE C/ PROV. CROCANTE","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898946686029","nome":"PAO DE ALHO DONA BETH TOMATE COM QUEIJO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898964318742","nome":"PAO DE ALHO MARTINS ALHO PORO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898964318032","nome":"PAO DE ALHO MARTINS 4 QUEIJOS","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898964318063","nome":"PAO DE ALHO MARTINS AZEITONA PRETA","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898964318643","nome":"PAO DE ALHO MARTINS CARNES DESFIADA C/QUEIJO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898964318124","nome":"PAO DE ALHO MARTINS DOCE DE LEITE","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898964318025","nome":"PAO DE ALHO MARTINS FRANGO CATU 4 UNI","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898964318070","nome":"PAO DE ALHO MARTINS GORG PARM 4 UNIDADE","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898964318056","nome":"PAO DE ALHO MARTINS TOMATE SECO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898964318018","nome":"PAO DE ALHO MARTINS TRADICIONAL","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"0742832765404","nome":"PAO DE ALHO PAO E SABOR ALHO PORO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"0742832765367","nome":"PAO DE ALHO PAO E SABOR FRANGO COM REQUEIJAO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"0742832765381","nome":"PAO DE ALHO PAO E SABOR QUATRO QUEIJOS","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"0742832765350","nome":"PAO DE ALHO PAO E SABOR TOMATE","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"0742832765374","nome":"PAO DE ALHO PAO E SABOR TRADICIONAL","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"0000000021623","nome":"PAO DE ALHO QUERO MAIS MISTO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898058130755","nome":"PAO HAMBURGUER BRIOCHE DELICIA DE TRIGO 420 GR","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7896093203472","nome":"PAO HAMBURGUER BRIOCHE LIDER MINAS 300 G C/6","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7896093200877","nome":"PAO HOT DOG BRIOCHE MILANE 400G C/8","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7896093203243","nome":"PAO PARA HAMBURGUER BRIOCHE C/GERGELIM 300 C/6","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7896093203465","nome":"PAO PARA HAMBURGUER BRIOCHE LIDER MINAS 300 G C/6","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7898976190015","nome":"PAO ZE DO ESPET ALHO TRADICIONAL","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7895545004674","nome":"PAO ZE DO ESPETO ALHO PORO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7895545004629","nome":"PAO ZE DO ESPETO ALHO TRADICIONAL","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"0630941210352","nome":"PAO ZE DO ESPETO BACON COM CHEDDAR","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"0736532689726","nome":"PAO ZE DO ESPETO CHOCOLATE","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7895545004643","nome":"PAO ZE DO ESPETO DE PEPPERONI","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7895545001611","nome":"PAO ZE DO ESPETO FRANGO COM REQUEIJAO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7895545004667","nome":"PAO ZE DO ESPETO QUATRO QUEIJOS","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"7895545001802","nome":"PAO ZE DO ESPETO TOMATE SECO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"0736532117960","nome":"PAO ZE ESPETO CARNE DE SOL C PIMENTA BIQUINHO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"},{"codigo":"0000000024860","nome":"TERNEIRO PAO DE ALHO MISTO","un":"KG","fam":"MERCEARIA","dep":"PAO DE ALHO"}];
+
+/* =====================================================================
+   LICENÇA DE USO
+   O arquivo guarda apenas a IMPRESSÃO DIGITAL de cada chave, nunca a
+   chave em si: ninguém descobre a chave lendo este código. Para liberar
+   mais um aparelho ou renovar a validade, emita no gerador-de-chaves.html
+   e acrescente a linha aqui.
+   ===================================================================== */
+const LIC_SAL='INVENTARIO-KG|v1|';
+const LICENCAS=[
+  {h:'1a3803c250cf3a438b6cb929f3bd9aabbd78533c4942798d94ba2a14d91f3ed6',
+   para:'Terneiro — Açougue e Frigorífico', ate:'2027-12-31'}
+];
+
+/* SHA-256 em JS puro: o Web Crypto não existe em páginas abertas por file:// */
+function sha256(msg){
+  const K=new Uint32Array([
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+  const H=new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
+                           0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+  let b;
+  if(typeof TextEncoder!=='undefined') b=Array.from(new TextEncoder().encode(msg));
+  else { b=[]; for(let i=0;i<msg.length;i++){ const c=msg.charCodeAt(i);
+    if(c<128) b.push(c);
+    else if(c<2048) b.push(192|(c>>6),128|(c&63));
+    else b.push(224|(c>>12),128|((c>>6)&63),128|(c&63)); } }
+  const bits=b.length*8;
+  b.push(0x80);
+  while(b.length%64!==56) b.push(0);
+  for(let i=7;i>=0;i--) b.push(Math.floor(bits/Math.pow(2,i*8))&0xff);
+  const w=new Uint32Array(64), rot=(x,n)=>(x>>>n)|(x<<(32-n));
+  for(let i=0;i<b.length;i+=64){
+    for(let j=0;j<16;j++)
+      w[j]=((b[i+j*4]<<24)|(b[i+j*4+1]<<16)|(b[i+j*4+2]<<8)|b[i+j*4+3])>>>0;
+    for(let j=16;j<64;j++){
+      const a1=w[j-15], a2=w[j-2];
+      const s0=(rot(a1,7)^rot(a1,18)^(a1>>>3))>>>0;
+      const s1=(rot(a2,17)^rot(a2,19)^(a2>>>10))>>>0;
+      w[j]=(w[j-16]+s0+w[j-7]+s1)>>>0;
+    }
+    let a=H[0],bb=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];
+    for(let j=0;j<64;j++){
+      const S1=(rot(e,6)^rot(e,11)^rot(e,25))>>>0;
+      const ch=((e&f)^((~e)&g))>>>0;
+      const t1=(h+S1+ch+K[j]+w[j])>>>0;
+      const S0=(rot(a,2)^rot(a,13)^rot(a,22))>>>0;
+      const mj=((a&bb)^(a&c)^(bb&c))>>>0;
+      const t2=(S0+mj)>>>0;
+      h=g;g=f;f=e;e=(d+t1)>>>0;d=c;c=bb;bb=a;a=(t1+t2)>>>0;
+    }
+    H[0]=(H[0]+a)>>>0;H[1]=(H[1]+bb)>>>0;H[2]=(H[2]+c)>>>0;H[3]=(H[3]+d)>>>0;
+    H[4]=(H[4]+e)>>>0;H[5]=(H[5]+f)>>>0;H[6]=(H[6]+g)>>>0;H[7]=(H[7]+h)>>>0;
+  }
+  return Array.from(H).map(x=>x.toString(16).padStart(8,'0')).join('');
+}
+
+const LIC={ estado:'ausente', para:'', ate:'', dias:0 };
+const normChave=k=>String(k||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+const hoje0=()=>{const d=new Date(); d.setHours(0,0,0,0); return d.getTime();};
+const diaDe=s=>{const [a,m,d]=String(s).split('-').map(Number); return new Date(a,m-1,d,23,59,59).getTime();};
+
+function confereChave(k){
+  const n=normChave(k);
+  if(n.length<12) return null;
+  const h=sha256(LIC_SAL+n);
+  return LICENCAS.find(l=>l.h===h)||null;
+}
+
+/* Lê a ativação gravada e decide o estado. Relógio atrasado não reabre
+   uma licença vencida: o app guarda a data mais adiantada que já viu.   */
+async function verificarLicenca(){
+  const reg=await DB.get('meta','licenca');
+  if(!reg||!reg.v||!reg.v.h){ LIC.estado='ausente'; return LIC; }
+  const l=LICENCAS.find(x=>x.h===reg.v.h);
+  if(!l){ LIC.estado='revogada'; return LIC; }        // chave saiu desta versão do arquivo
+  LIC.para=l.para; LIC.ate=l.ate;
+  const marco=await DB.get('meta','maiorData');
+  const visto=(marco&&marco.v)||0;
+  const agora=Math.max(hoje0(), visto);
+  if(hoje0()>visto) await DB.put('meta',{k:'maiorData',v:hoje0()});
+  const limite=diaDe(l.ate);
+  LIC.dias=Math.ceil((limite-agora)/86400000);
+  LIC.estado = agora>limite ? 'vencida' : 'ativa';
+  return LIC;
+}
+async function ativarLicenca(){
+  const campo=$('#lic_k'); const l=confereChave(campo.value);
+  if(!l){ beep(false); $('#lic_erro').textContent='Chave inválida. Confira os caracteres e tente de novo.'; campo.select(); return; }
+  if(hoje0()>diaDe(l.ate)){ $('#lic_erro').textContent=`Esta chave venceu em ${l.ate.split('-').reverse().join('/')}.`; return; }
+  await DB.put('meta',{k:'licenca',v:{h:l.h, em:Date.now()}});
+  await verificarLicenca();
+  beep(true); telaLicenca(); render();
+  toast('Aparelho liberado','ok');
+  $('#hsub').textContent=`${esc(LIC.para)} · ${S.dev.nome}`;
+  if(MIG_PEND){ avisoMigracao(MIG_PEND); MIG_PEND=null; return; }   // aviso que ficou represado
+  if(!S.user) setTimeout(askUser,300);
+}
+function confirmarRemoverLicenca(){
+  modal(`<h3>Remover a ativação?</h3>
+    <p class="tiny muted">O aparelho volta a pedir a chave na próxima abertura. As contagens
+    e o cadastro continuam aqui, intactos.</p>
+    <div class="row" style="margin-top:16px">
+      <button class="btn gh" onclick="closeModal()">Cancelar</button>
+      <button class="btn dg" onclick="closeModal();removerLicenca()">Remover</button></div>`);
+}
+async function removerLicenca(){
+  await DB.del('meta','licenca');
+  await verificarLicenca(); telaLicenca();
+  toast('Ativação removida deste aparelho');
+}
+
+/* Porta de entrada: sem licença válida o app não conta.
+   Vencida é diferente de ausente — ali os dados ainda podem ser exportados. */
+function telaLicenca(){
+  const g=$('#gate');
+  if(LIC.estado==='ativa'){ g.classList.add('hide'); document.body.classList.remove('travado'); return; }
+  document.body.classList.add('travado');
+  const vencida=LIC.estado==='vencida', revogada=LIC.estado==='revogada';
+  g.classList.remove('hide');
+  g.innerHTML=`<div class="gatebox">
+    <div class="gatelogo">🔒</div>
+    <h2>${vencida?'Licença vencida':revogada?'Chave não reconhecida':'Aparelho não liberado'}</h2>
+    <p class="tiny muted" style="line-height:1.7">
+      ${vencida? `A licença de <b>${esc(LIC.para)}</b> venceu em ${LIC.ate.split('-').reverse().join('/')}.
+                  Suas contagens continuam guardadas e podem ser exportadas abaixo. Informe uma chave nova para voltar a contar.`
+       : revogada? 'A chave gravada neste aparelho não consta nesta versão do aplicativo. Informe uma chave válida.'
+       : 'Este aplicativo é de uso restrito. Informe a chave de liberação para começar a usar.'}
+    </p>
+    <input id="lic_k" class="inp big" style="font-size:16px;letter-spacing:1px;margin-top:16px;padding:14px 10px"
+           placeholder="TRN-XXXXX-XXXXX-XXXXX-XXXXX" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <div id="lic_erro" class="tiny" style="color:#ff6b81;min-height:17px;margin-top:8px;font-weight:650"></div>
+    <button class="btn pri" onclick="ativarLicenca()">Liberar aparelho</button>
+    ${vencida?`<button class="btn" style="margin-top:8px" onclick="exportar()">⬇️ Exportar minhas contagens</button>
+               <button class="btn" style="margin-top:8px" onclick="backup()">💾 Gerar backup completo</button>`:''}
+    <p class="tiny muted" style="margin-top:16px">Não tem a chave? Fale com o responsável pelo inventário.</p>
+  </div>`;
+  const i=$('#lic_k');
+  i.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();ativarLicenca()} });
+  setTimeout(()=>i.focus(),80);
+}
+
+/* ------------------------------- DB ---------------------------------- */
+const DB = (() => {
+  const NAME='inventario_estoque', VER=1;
+  let db=null;
+  function open(){
+    return new Promise((res,rej)=>{
+      const r=indexedDB.open(NAME,VER);
+      r.onupgradeneeded=e=>{
+        const d=e.target.result;
+        if(!d.objectStoreNames.contains('produtos')){
+          const s=d.createObjectStore('produtos',{keyPath:'codigo'});
+          s.createIndex('dep','dep'); s.createIndex('fam','fam'); s.createIndex('norm','norm');
+        }
+        if(!d.objectStoreNames.contains('contagens')){
+          const s=d.createObjectStore('contagens',{keyPath:'id',autoIncrement:true});
+          s.createIndex('codigo','codigo'); s.createIndex('ts','ts');
+        }
+        if(!d.objectStoreNames.contains('meta')) d.createObjectStore('meta',{keyPath:'k'});
+      };
+      r.onsuccess=()=>{db=r.result;res(db)}; r.onerror=()=>rej(r.error);
+    });
+  }
+  const tx=(st,mode)=>db.transaction(st,mode).objectStore(st);
+  const p=req=>new Promise((res,rej)=>{req.onsuccess=()=>res(req.result);req.onerror=()=>rej(req.error)});
+  return {
+    open,
+    all:s=>p(tx(s,'readonly').getAll()),
+    get:(s,k)=>p(tx(s,'readonly').get(k)),
+    put:(s,v)=>p(tx(s,'readwrite').put(v)),
+    del:(s,k)=>p(tx(s,'readwrite').delete(k)),
+    clear:s=>p(tx(s,'readwrite').clear()),
+    bulk(s,arr){
+      return new Promise((res,rej)=>{
+        const t=db.transaction(s,'readwrite'), o=t.objectStore(s);
+        arr.forEach(v=>o.put(v));
+        t.oncomplete=()=>res(arr.length); t.onerror=()=>rej(t.error);
+      });
+    }
+  };
+})();
+
+/* ------------------------------ Store -------------------------------- */
+const S = {
+  prods:[], byCode:new Map(), byNorm:new Map(),
+  counts:[], totals:new Map(),
+  user:'', cfg:{beep:true,vibra:true,balanca:false,pecas:true,fixar:true},
+  dev:{id:'',nome:''},        // identidade do aparelho — permite mesclar sem duplicar
+  lastExport:0, lastCatalogo:0, persist:null,
+
+  norm(c){ const s=String(c||'').trim().toUpperCase(); const n=s.replace(/^0+/,''); return n||s; },
+
+  async load(){
+    this.prods = await DB.all('produtos');
+    if(!this.prods.length){ await this.seed(); this.prods = await DB.all('produtos'); }
+    this.counts = await DB.all('contagens');
+    const u = await DB.get('meta','user'); this.user = u? u.v : '';
+    const c = await DB.get('meta','cfg'); if(c) this.cfg = Object.assign(this.cfg, c.v);
+    const d = await DB.get('meta','dev');
+    if(d && d.v && d.v.id) this.dev = d.v;
+    else {
+      this.dev={id:Math.random().toString(36).slice(2,6).toUpperCase(), nome:'Aparelho 1'};
+      await DB.put('meta',{k:'dev',v:this.dev});
+    }
+    const le = await DB.get('meta','lastExport'); this.lastExport = le? le.v : 0;
+    const lc = await DB.get('meta','lastCatalogo'); this.lastCatalogo = lc? lc.v : 0;
+    this.index();
+  },
+  // produtos cadastrados aqui depois do último catálogo enviado
+  catalogoPendente(){ return this.prods.filter(p=>p.em && p.em>this.lastCatalogo).length; },
+  // identificador único de um lançamento — lançamentos antigos ganham um a partir do id local
+  uidOf(c){ return c.uid || `LOCAL-${c.id}`; },
+  naoExportados(){ return this.counts.filter(c=>c.ts>this.lastExport).length; },
+  async seed(){
+    await DB.bulk('produtos', SEED.map(p=>({
+      codigo:String(p.codigo), nome:p.nome, un:p.un, fam:p.fam, dep:p.dep, norm:this.norm(p.codigo)
+    })));
+  },
+  index(){
+    this.byCode=new Map(); this.byNorm=new Map();
+    for(const p of this.prods){
+      this.byCode.set(String(p.codigo).toUpperCase(), p);
+      const n=this.norm(p.codigo);
+      if(!this.byNorm.has(n)) this.byNorm.set(n,p);
+    }
+    this.recalc();
+  },
+  recalc(){
+    this.totals=new Map();
+    for(const c of this.counts){
+      const t=this.totals.get(c.codigo)||{qtd:0,pec:0,n:0,last:0};
+      t.qtd+=Number(c.qtd)||0; t.pec+=pcs(c); t.n++; t.last=Math.max(t.last,c.ts);
+      this.totals.set(c.codigo,t);
+    }
+  },
+  /* Busca por código OU nome, devolvendo candidatos ordenados por relevância.
+     0 código exato · 1 código sem zeros · 2 fim do código · 3 trecho do código
+     4 nome começa com · 5 nome contém todas as palavras                        */
+  buscar(raw, lim=12){
+    const s=String(raw||'').trim().toUpperCase();
+    if(!s) return [];
+    const nrm=this.norm(s), digitos=/^\d+$/.test(s);
+    const termos=s.split(/\s+/).filter(Boolean);
+    const hits=[];
+    for(const p of this.prods){
+      const cod=String(p.codigo).toUpperCase(), nome=String(p.nome).toUpperCase();
+      let r=-1;
+      if(cod===s) r=0;
+      else if(this.norm(cod)===nrm) r=1;
+      else if(digitos && cod.endsWith(s)) r=2;
+      else if(digitos && cod.includes(s)) r=3;
+      else if(nome.startsWith(s)) r=4;
+      else if(termos.every(t=>nome.includes(t))) r=5;
+      if(r>=0) hits.push({p,r});
+    }
+    hits.sort((a,b)=>a.r-b.r || a.p.nome.localeCompare(b.p.nome));
+    return hits.slice(0,lim).map(h=>h.p);
+  },
+  find(raw){
+    let q=String(raw||'').trim().toUpperCase();
+    if(!q) return null;
+    if(this.byCode.has(q)) return this.byCode.get(q);
+    // etiqueta de balança EAN-13: 2 + PLU(6) + peso-gramas(5) + DV
+    if(this.cfg.balanca && /^2\d{12}$/.test(q)){
+      const plu=q.slice(1,7), gr=parseInt(q.slice(7,12),10);
+      const p=this.byNorm.get(this.norm(plu));
+      if(p) return Object.assign({},p,{_peso: gr/1000});
+    }
+    const n=this.norm(q);
+    if(this.byNorm.has(n)) return this.byNorm.get(n);
+    // sem chute: código parecido não resolve sozinho, quem decide é o operador (ver buscarEnter)
+    return null;
+  },
+  async addCount(prod, qtd, pecas){
+    const d=new Date();
+    // em KG as peças são informadas à parte; em UN a própria quantidade já é a peça
+    const pec = prod.un==='KG' ? (Number(pecas)>0?Math.round(Number(pecas)):1) : Math.round(Number(qtd));
+    const uid = `${this.dev.id}-${d.getTime().toString(36)}-${Math.random().toString(36).slice(2,5)}`;
+    const rec={ uid, dev:this.dev.nome,
+                codigo:prod.codigo, nome:prod.nome, un:prod.un, fam:prod.fam, dep:prod.dep,
+                qtd:Number(qtd), pecas:pec, usuario:this.user||'—', ts:d.getTime() };
+    const id=await DB.put('contagens',rec);
+    rec.id=id; this.counts.push(rec); this.recalc();
+    if(this.counts.length % 50 === 0) snapshot('automático');
+    return rec;
+  },
+  async delCount(id){
+    await DB.del('contagens',id);
+    this.counts=this.counts.filter(c=>c.id!==id); this.recalc();
+  },
+  // junta lançamentos vindos de outro aparelho, ignorando o que já existe aqui
+  async mesclar(recs){
+    const have=new Set(this.counts.map(c=>this.uidOf(c)));
+    const novos=[], repetidos=[];
+    for(const r of recs){
+      const uid=r.uid||`IMP-${r.ts}-${r.codigo}-${r.qtd}`;
+      if(have.has(uid)){ repetidos.push(r); continue; }
+      have.add(uid);
+      novos.push({uid, dev:r.dev||'importado', codigo:String(r.codigo), nome:r.nome,
+                  un:r.un==='KG'?'KG':'UN', fam:r.fam||'', dep:r.dep||'',
+                  qtd:parseNum(r.qtd),
+                  pecas:Math.round(parseNum(r.pecas))||(r.un==='KG'?1:Math.round(parseNum(r.qtd))||0),
+                  usuario:r.usuario||'—', ts:Number(r.ts)||Date.now()});
+    }
+    if(novos.length) await DB.bulk('contagens',novos);
+    this.counts=await DB.all('contagens'); this.recalc();
+    return {novos:novos.length, repetidos:repetidos.length,
+            aparelhos:[...new Set(novos.map(n=>n.dev))]};
+  },
+  async saveCfg(){ await DB.put('meta',{k:'cfg',v:this.cfg}); },
+  async setUser(v){ this.user=v; await DB.put('meta',{k:'user',v}); },
+  deps(){ return [...new Set(this.prods.map(p=>p.dep))].sort(); },
+  fams(){ return [...new Set(this.prods.map(p=>p.fam))].sort(); }
+};
+
+/* ---------------------------- Utilidades ----------------------------- */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nf=(v,un)=>un==='KG'? Number(v).toLocaleString('pt-BR',{minimumFractionDigits:3,maximumFractionDigits:3})
+                          : Number(v).toLocaleString('pt-BR',{maximumFractionDigits:0});
+// peças de um lançamento — registros antigos (sem o campo) são tratados com segurança
+const pcs=c => c.pecas!=null ? Number(c.pecas)||0 : (c.un==='KG' ? 1 : Math.round(Number(c.qtd))||0);
+const nfp=v=>Number(v).toLocaleString('pt-BR',{maximumFractionDigits:0});
+const dt=ts=>new Date(ts).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const dOnly=ts=>new Date(ts).toLocaleDateString('pt-BR');
+// data e hora curtas, sem a vírgula do toLocaleString — usadas nos cabeçalhos da planilha
+const dtC=ts=>new Date(ts).toLocaleDateString('pt-BR')+' '+
+  new Date(ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+const pctBR=v=>(v*100).toFixed(1).replace('.',',')+'%';
+
+/* Converte texto em número sem se confundir com o separador.
+   Números vindos de planilha já chegam como number e passam direto.
+   Em texto: manda o separador que aparece por último; só com pontos,
+   "1.234.567" e "500.000" são agrupamento, mas "500.5" é decimal.      */
+function parseNum(v){
+  if(typeof v==='number') return isFinite(v)? v : 0;
+  let s=String(v??'').trim().replace(/\s|[R$]/g,'');
+  if(!s) return 0;
+  const c=s.lastIndexOf(','), d=s.lastIndexOf('.');
+  if(c>=0 && d>=0)  s = c>d ? s.replace(/\./g,'').replace(',','.') : s.replace(/,/g,'');
+  else if(c>=0)     s = s.replace(',','.');
+  else if(d>=0){
+    const p=s.split('.');
+    const agrupado = p.length>2 || (p.length===2 && p[1].length===3 && p[0].length<=3);
+    if(agrupado) s=s.replace(/\./g,'');
+  }
+  const n=parseFloat(s);
+  return isFinite(n)? n : 0;
+}
+const hOnly=ts=>new Date(ts).toLocaleTimeString('pt-BR');
+
+function toast(msg,type=''){
+  const el=document.createElement('div'); el.className='tst '+type; el.textContent=msg;
+  $('#toast').appendChild(el);
+  setTimeout(()=>{el.style.transition='opacity .25s';el.style.opacity='0';setTimeout(()=>el.remove(),260)},1700);
+}
+let AC=null;
+// o iPhone só deixa tocar som depois de um toque do usuário, e ainda
+// suspende o áudio quando o app volta do segundo plano
+function acordarAudio(){
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    if(AC.state==='suspended') AC.resume();
+  }catch(e){}
+}
+['touchend','mousedown','keydown'].forEach(ev=>
+  document.addEventListener(ev,acordarAudio,{once:false,passive:true}));
+function beep(ok=true){
+  if(!S.cfg.beep) return;
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    if(AC.state==='suspended') AC.resume();
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.connect(g); g.connect(AC.destination);
+    o.frequency.value=ok?1180:240; o.type='square';
+    g.gain.setValueAtTime(.05,AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+(ok?.09:.26));
+    o.start(); o.stop(AC.currentTime+(ok?.1:.28));
+  }catch(e){}
+}
+const vib=ms=>{ if(S.cfg.vibra&&navigator.vibrate) navigator.vibrate(ms); };
+
+function modal(html){
+  $('#modal').innerHTML=`<div class="ovl" onclick="if(event.target===this)closeModal()"><div class="sheet">${html}</div></div>`;
+}
+const closeModal=()=>$('#modal').innerHTML='';
+
+/* ------------------------------ Router ------------------------------- */
+let VIEW='count';
+document.querySelectorAll('nav button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
+    VIEW=b.dataset.v; render(); $('#main').scrollTop=0;
+  };
+});
+function render(){ ({count:vCount,prods:vProds,hist:vHist,rep:vRep,cfg:vCfg})[VIEW](); }
+
+/* ====================== VIEW 1 — CONTAGEM ============================ */
+let CUR=null;
+function vCount(){
+  const hoje=new Date().setHours(0,0,0,0);
+  const doDia=S.counts.filter(c=>c.ts>=hoje);
+  const contados=S.totals.size;
+  const pend=S.naoExportados();
+  $('#main').innerHTML=`
+    ${LIC.dias<=30&&LIC.dias>0?`<div class="card" style="border-color:#7a5a12;background:#241c07;padding:11px 13px">
+      <div style="font-weight:700;font-size:13.5px;color:var(--warn)">⏳ Licença vence em ${LIC.dias} dia(s)</div>
+      <div class="tiny muted" style="margin-top:4px">Depois de ${LIC.ate.split('-').reverse().join('/')} o app não aceita novas contagens, mas você ainda consegue exportar o que já tem.</div>
+    </div>`:''}
+    ${pend>=100?`<div class="card" style="border-color:#7a5a12;background:#241c07;padding:11px 13px">
+      <div style="font-weight:700;font-size:13.5px;color:var(--warn)">📤 ${pend} lançamentos ainda não exportados</div>
+      <div class="tiny muted" style="margin-top:4px">Gere a planilha ou o backup de vez em quando — se este aparelho se perder, a contagem vai junto.</div>
+      <button class="btn sm" style="margin-top:9px;width:100%" onclick="exportar()">Exportar agora</button>
+    </div>`:''}
+    ${S.persist===false?`<div class="card" style="border-color:#6b2233;background:#241016;padding:11px 13px">
+      <div style="font-weight:700;font-size:13.5px;color:#ff6b81">⚠️ Armazenamento sem proteção</div>
+      <div class="tiny muted" style="margin-top:4px">Instale o app na tela inicial. No iPhone, sem isso o Safari apaga os dados após 7 dias.</div>
+    </div>`:''}
+    <div class="stats">
+      <div class="stat"><div class="v">${doDia.length}</div><div class="k">Lançamentos hoje</div></div>
+      <div class="stat"><div class="v">${contados}</div><div class="k">Itens contados</div></div>
+      <div class="stat"><div class="v">${S.prods.length}</div><div class="k">Cadastrados</div></div>
+    </div>
+
+    <div class="hero">
+      <div class="scanline"><span class="dot"></span><span class="tiny muted">${S.cfg.fixar?'Produto fixo ativo — leia um código para trocar de item':'Pronto para leitura — aponte o leitor ou digite'}</span></div>
+      <label class="lbl">Código ou nome do produto</label>
+      <input id="cod" class="inp big" inputmode="text" autocomplete="off" autocapitalize="characters"
+             spellcheck="false" placeholder="código ou nome">
+      <div id="sug"></div>
+    </div>
+
+    <div id="slot"></div>
+
+    <div class="sec-title">Últimos lançamentos</div>
+    <div id="ult"></div>`;
+
+  renderUlt();
+  const cod=$('#cod');
+  let deb;
+  cod.addEventListener('input',()=>{
+    const v=cod.value.trim();
+    // leitores "colam" o valor de uma vez: EAN completo dispara sozinho
+    if(v.length>=13 && /^\d+$/.test(v)){ clearTimeout(deb); lookup(v); return; }
+    clearTimeout(deb);
+    deb=setTimeout(()=>renderSug(cod.value),110);   // lê o valor atual: evita lista fantasma
+  });
+  cod.addEventListener('keydown',e=>{
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+      if(!SUG.length) return;
+      e.preventDefault();
+      SEL = e.key==='ArrowDown' ? Math.min(SUG.length-1, SEL+1) : Math.max(0, SEL-1);
+      pintaSug();
+      return;
+    }
+    if(e.key==='Enter'){
+      e.preventDefault();
+      if(SEL>=0 && SUG[SEL]) escolher(SUG[SEL].codigo);   // navegou com as setas
+      else buscarEnter(cod.value);
+      return;
+    }
+    if(e.key==='Escape' && SUG.length){ e.preventDefault(); limpaSug(); }
+  });
+  focusCode();
+}
+const focusCode=()=>{ const c=$('#cod'); if(c){c.focus({preventScroll:true});c.select()} };
+
+/* ---------------- sugestões de produto ----------------
+   A lista mostra TODOS os produtos que combinam com o que foi digitado,
+   não só os primeiros: é assim que se procura um item pelo nome.         */
+const LIM_SUG=300;
+let SUG=[], SEL=-1;
+const limpaSug=()=>{ SUG=[]; SEL=-1; const s=$('#sug'); if(s) s.innerHTML=''; };
+
+function realce(txt,q){
+  const t=String(txt), s=String(q).trim();
+  if(!s) return esc(t);
+  const i=t.toUpperCase().indexOf(s.toUpperCase());
+  if(i<0) return esc(t);
+  return esc(t.slice(0,i))+'<mark>'+esc(t.slice(i,i+s.length))+'</mark>'+esc(t.slice(i+s.length));
+}
+
+function renderSug(q){
+  const el=$('#sug'); if(!el) return;
+  const s=String(q||'').trim();
+  if(s.length<2){ limpaSug(); return; }
+  SUG=S.buscar(s,LIM_SUG); SEL=-1;
+  if(!SUG.length){
+    el.innerHTML=`<div class="sug"><div class="hint">Nenhum produto com “${esc(s)}”. Enter para cadastrar.</div></div>`;
+    return;
+  }
+  el.innerHTML=`<div class="sug">
+    <div class="hint">${SUG.length===1?'1 produto encontrado'
+      :`${SUG.length} produtos encontrados${SUG.length>=LIM_SUG?' (limite da tela)':''} — role a lista, toque, ou use ↑ ↓ e Enter`}</div>
+    ${SUG.map((p,i)=>`
+      <button data-i="${i}" onclick="escolher('${esc(p.codigo)}')">
+        <div class="l1">
+          <span class="nm">${realce(p.nome,s)}</span>
+          <span class="pill ${p.un==='KG'?'kg':'un'}">${p.un}</span>
+        </div>
+        <div class="l2">${realce(p.codigo,s)} · ${esc(p.fam)} › ${esc(p.dep)}${
+          S.totals.has(p.codigo)? ` · <span style="color:var(--ok)">já contado ${nf(S.totals.get(p.codigo).qtd,p.un)} ${p.un}</span>`:''}</div>
+      </button>`).join('')}
+  </div>`;
+}
+function pintaSug(){
+  const bs=$('#sug').querySelectorAll('button');
+  bs.forEach((b,i)=>b.classList.toggle('sel',i===SEL));
+  if(bs[SEL] && bs[SEL].scrollIntoView) bs[SEL].scrollIntoView({block:'nearest'});
+}
+function escolher(cod){ limpaSug(); lookup(cod); }
+
+/* Enter no campo de código/nome:
+   1) código exato (completo, sem zeros à esquerda, ou etiqueta de balança) abre direto — velocidade intacta;
+   2) um único candidato abre direto;
+   3) vários candidatos (nome digitado ou código parcial) viram lista de escolha;
+   4) nada encontrado cai no card que oferece cadastrar.
+   A lista de parecidos já aparece enquanto se digita, então nada passa despercebido. */
+function buscarEnter(raw){
+  const s=String(raw||'').trim();
+  if(!s) return;
+  const up=s.toUpperCase();
+  if(S.find(up)){ limpaSug(); lookup(up); return; }
+  const lista=S.buscar(up,LIM_SUG);
+  if(lista.length===1){ escolher(lista[0].codigo); return; }
+  if(!lista.length){ limpaSug(); lookup(up); return; }
+  renderSug(s); SEL=0; pintaSug();
+  beep(true); vib(20);
+}
+
+function renderUlt(){
+  const el=$('#ult'); if(!el) return;
+  const last=[...S.counts].sort((a,b)=>b.ts-a.ts).slice(0,8);
+  el.innerHTML = last.length? last.map(c=>`
+    <div class="item">
+      <div class="l">
+        <div class="nm">${esc(c.nome)}</div>
+        <div class="sub">${hOnly(c.ts)} · ${esc(c.dep)} · ${esc(c.usuario)}</div>
+      </div>
+      <div class="r">
+        <div class="q">${nf(c.qtd,c.un)} <span class="muted tiny">${c.un}</span></div>
+        ${c.un==='KG'?`<div class="tiny muted">${nfp(pcs(c))} pç</div>`:''}
+      </div>
+      <button class="btn sm gh dg" onclick="undo(${c.id})">✕</button>
+    </div>`).join('')
+   : `<div class="empty"><span class="ic">📋</span>Nenhuma contagem ainda.<br><span class="tiny">Leia o primeiro código acima.</span></div>`;
+}
+
+// resumo do que já foi contado do item + o que foi feito nesta sessão fixa
+function jacHTML(p){
+  const t=S.totals.get(p.codigo);
+  const tot = t? `Já contado: <b style="color:var(--ok)">${nf(t.qtd,p.un)} ${p.un}</b>`+
+                 `${p.un==='KG'?` · <b style="color:var(--ok)">${nfp(t.pec)} pç</b>`:''}`+
+                 ` em ${t.n} lançamento${t.n>1?'s':''}`
+              : 'Primeira contagem deste item';
+  const s = (SESS && SESS.cod===p.codigo && SESS.n>0)
+    ? `<br><span style="color:var(--acc2)">📌 Nesta sessão: ${SESS.n} pesagem${SESS.n>1?'s':''} · ${nf(SESS.qtd,p.un)} ${p.un}${p.un==='KG'?` · ${nfp(SESS.pec)} pç`:''}</span>`
+    : '';
+  return tot+s;
+}
+
+let SESS=null; // {cod,n,qtd,pec} — acumulado do produto travado na tela
+
+function lookup(raw,silent){
+  const q=String(raw||'').trim();
+  if(!q) return;
+  const p=S.find(q);
+  if(!p){
+    beep(false); vib([70,50,70]);
+    $('#slot').innerHTML=`<div class="err">
+        <b>Código não encontrado</b>
+        <div class="tiny muted" style="margin-top:5px">“${esc(q)}” não está no cadastro. Cadastre agora e continue contando.</div>
+        <div class="row" style="margin-top:11px">
+          <button class="btn sm pri" style="flex:2" onclick="novoProduto('${esc(q)}')">＋ Cadastrar produto</button>
+          <button class="btn sm gh" onclick="limpar()">Limpar</button>
+        </div>
+      </div>`;
+    $('#cod').select();
+    return;
+  }
+  CUR=p;
+  if(!silent){ beep(true); vib(35); }
+  if(!SESS || SESS.cod!==p.codigo) SESS={cod:p.codigo,n:0,qtd:0,pec:0};
+  limpaSug();
+  const cod=$('#cod'); if(cod) cod.value='';
+  $('#slot').innerHTML=`
+    <div class="found">
+      <div class="cod">CÓD ${esc(p.codigo)}</div>
+      <div class="nm">${esc(p.nome)}</div>
+      <div class="meta">
+        <span class="pill ${p.un==='KG'?'kg':'un'}">${p.un==='KG'?'⚖️ QUILO (KG)':'📦 UNIDADE'}</span>
+        <span class="pill">🏷️ ${esc(p.fam)}</span>
+        <span class="pill">🏬 ${esc(p.dep)}</span>
+        <button class="pill ${S.cfg.fixar?'ac':''}" onclick="togFixar()">📌 ${S.cfg.fixar?'PRODUTO FIXO':'TROCAR SEMPRE'}</button>
+      </div>
+      <div class="tiny muted" id="jac" style="margin-top:9px">${jacHTML(p)}</div>
+      ${usaPecas(p)?`
+      <div class="row" style="margin-top:13px;align-items:flex-end">
+        <div style="flex:1.9">
+          <label class="lbl">Peso em quilos</label>
+          <div class="qtywrap">
+            <input id="qtd" class="inp big" inputmode="decimal" autocomplete="off" placeholder="0,000"
+                   style="padding-right:46px" value="${p._peso?String(p._peso).replace('.',','):''}">
+            <span class="un">KG</span>
+          </div>
+        </div>
+        <div style="flex:1">
+          <label class="lbl">Peças</label>
+          <div class="qtywrap">
+            <input id="pec" class="inp big" inputmode="numeric" autocomplete="off" value="1"
+                   style="padding-right:34px;font-size:22px">
+            <span class="un" style="font-size:13px">pç</span>
+          </div>
+        </div>
+      </div>`:`
+      <label class="lbl" style="margin-top:13px">Quantidade em ${p.un==='KG'?'quilos':'unidades'}</label>
+      <div class="qtywrap">
+        <input id="qtd" class="inp big" inputmode="decimal" autocomplete="off"
+               placeholder="0${p.un==='KG'?',000':''}" style="padding-right:56px" value="${p._peso?String(p._peso).replace('.',','):''}">
+        <span class="un">${p.un}</span>
+      </div>`}
+      <div class="keys">
+        ${(p.un==='KG'?[0.5,1,2,5,10,-1,'C','OK']:[1,2,6,12,24,-1,'C','OK']).map(k=>
+          k==='OK'?`<button style="grid-column:span 2;background:var(--ok);color:#04241a;border-color:#2ee0aa" onclick="salvar()">✓ GRAVAR</button>`
+          :k==='C'?`<button onclick="qz('C')">C</button>`
+          :k===-1?`<button onclick="qz(-1)">⌫</button>`
+          :`<button onclick="qz(${k})">+${String(k).replace('.',',')}</button>`).join('')}
+      </div>
+      <button class="btn gh sm" style="width:100%;margin-top:8px" onclick="limpar()">
+        ${S.cfg.fixar?'🔄 Trocar de produto (Esc)':'Cancelar (Esc)'}</button>
+    </div>`;
+  const qi=$('#qtd'), pi=$('#pec');
+  qi.focus({preventScroll:true}); qi.select();
+  qi.addEventListener('keydown',e=>{
+    // com peças: Enter pula para o campo de peças (já preenchido com 1)
+    if(e.key==='Enter'){ e.preventDefault(); if(pi){pi.focus();pi.select()} else salvar(); }
+    if(e.key==='Escape'){e.preventDefault();limpar()}
+  });
+  if(pi) pi.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();salvar()}
+    if(e.key==='Escape'){e.preventDefault();limpar()}
+  });
+}
+// peças em campo próprio: só faz sentido em produtos vendidos por peso
+const usaPecas=p => p.un==='KG' && S.cfg.pecas;
+
+function qz(k){
+  const q=$('#qtd'); if(!q) return;
+  if(k==='C'){ q.value=''; }
+  else if(k===-1){ q.value=q.value.slice(0,-1); }
+  else { q.value=String(parseNum(q.value)+k).replace('.',','); }
+  q.focus();
+}
+function limpar(){ CUR=null; SESS=null; limpaSug(); $('#slot').innerHTML='';
+  const c=$('#cod'); if(c){c.value='';c.focus()} }
+
+// alterna entre travar o produto na tela e voltar ao código a cada item
+async function togFixar(){
+  S.cfg.fixar=!S.cfg.fixar; await S.saveCfg();
+  const q=$('#qtd'), pi=$('#pec');
+  const vq=q?q.value:'', vp=pi?pi.value:'';
+  if(CUR){
+    lookup(CUR.codigo,true);
+    if($('#qtd')) $('#qtd').value=vq;
+    if($('#pec')&&vp) $('#pec').value=vp;
+    $('#qtd').focus();
+  }
+  toast(S.cfg.fixar?'📌 Produto fica travado na tela':'Volta ao código a cada item');
+}
+
+async function salvar(){
+  if(!CUR) return;
+  if(!S.user){ askUser(); return; }
+  const v=parseNum($('#qtd').value);
+  if(!(v>0)){ beep(false); vib(60); toast('Informe uma quantidade válida','er'); $('#qtd').focus(); return; }
+  const pi=$('#pec');
+  let pc=1;
+  if(pi){
+    pc=parseInt(String(pi.value).replace(/\D/g,''),10);
+    if(!(pc>0)){ beep(false); vib(60); toast('Número de peças inválido','er'); pi.focus(); pi.select(); return; }
+  }
+  const p=CUR;
+  await S.addCount(p,v,pc);
+  beep(true); vib(45);
+  toast(`✓ ${nf(v,p.un)} ${p.un}${pi?` · ${pc} pç`:''} — ${p.nome.slice(0,22)}`,'ok');
+
+  if(S.cfg.fixar){
+    // produto continua na tela: limpa só a quantidade e volta o cursor para ela
+    if(!SESS||SESS.cod!==p.codigo) SESS={cod:p.codigo,n:0,qtd:0,pec:0};
+    SESS.n++; SESS.qtd+=v; SESS.pec+=pc;
+    const jac=$('#jac'); if(jac) jac.innerHTML=jacHTML(p);
+    const qi=$('#qtd'); qi.value=''; if(pi) pi.value='1';
+    qi.focus({preventScroll:true});
+  } else {
+    limpar();
+  }
+  renderUlt();
+  const st=$('#main').querySelectorAll('.stat .v');
+  if(st.length){
+    const hoje=new Date().setHours(0,0,0,0);
+    st[0].textContent=S.counts.filter(c=>c.ts>=hoje).length;
+    st[1].textContent=S.totals.size;
+  }
+}
+/* Excluir uma pesagem pede confirmação: o ✕ fica ao lado do dedo
+   durante a contagem e um toque errado apagaria o registro sem volta. */
+function undo(id){
+  const c=S.counts.find(x=>x.id===id);
+  if(!c){ toast('Lançamento não encontrado','er'); return; }
+  const t=S.totals.get(c.codigo);
+  modal(`<h3>Excluir esta pesagem?</h3>
+    <div class="card" style="margin:12px 0 0;background:var(--panel2)">
+      <div style="font-weight:750;font-size:15px;line-height:1.3">${esc(c.nome)}</div>
+      <div class="tiny muted" style="margin-top:5px">CÓD ${esc(c.codigo)} · ${esc(c.dep)}</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:11px">
+        <div class="tiny muted">${dOnly(c.ts)} às ${hOnly(c.ts)}<br>👤 ${esc(c.usuario)}${
+          c.dev&&c.dev!==S.dev.nome?` · 📱 ${esc(c.dev)}`:''}</div>
+        <div style="text-align:right">
+          <div style="font-weight:800;font-size:19px">${nf(c.qtd,c.un)} <span class="muted" style="font-size:13px">${c.un}</span></div>
+          ${c.un==='KG'?`<div class="tiny muted">${nfp(pcs(c))} pç</div>`:''}
+        </div>
+      </div>
+    </div>
+    <p class="tiny muted" style="margin:12px 0 0">
+      ${t&&t.n>1? `Este produto tem ${t.n} pesagens somando ${nf(t.qtd,c.un)} ${c.un}.
+                   Vai ficar com ${t.n-1}, somando ${nf(t.qtd-Number(c.qtd),c.un)} ${c.un}.`
+                : 'É a única pesagem deste produto — ele volta a constar como não contado.'}
+      <br>Não dá para desfazer.
+    </p>
+    <div class="row" style="margin-top:16px">
+      <button class="btn gh" onclick="closeModal()">Cancelar</button>
+      <button class="btn dg" onclick="undoOk(${id})">Excluir</button>
+    </div>`);
+}
+async function undoOk(id){
+  await S.delCount(id);
+  closeModal(); vib(40); toast('Pesagem excluída','ok'); render();
+}
+
+/* ====================== VIEW 2 — PRODUTOS ============================ */
+let fDep='', fFam='', fBusca='', fPend=false;
+function vProds(){
+  $('#main').innerHTML=`
+    <input class="inp" id="bsc" placeholder="🔎 Buscar por nome ou código" value="${esc(fBusca)}">
+    <div class="chips" style="margin-top:10px">
+      <button class="chip ${!fFam?'on':''}" onclick="setF('fam','')">Todas famílias</button>
+      ${S.fams().map(f=>`<button class="chip ${fFam===f?'on':''}" onclick="setF('fam','${esc(f)}')">${esc(f)}</button>`).join('')}
+    </div>
+    <div class="chips">
+      <button class="chip ${!fDep?'on':''}" onclick="setF('dep','')">Todos deptos</button>
+      ${S.deps().map(d=>`<button class="chip ${fDep===d?'on':''}" onclick="setF('dep','${esc(d)}')">${esc(d)}</button>`).join('')}
+    </div>
+    <div class="chips">
+      <button class="chip ${fPend?'on':''}" onclick="setF('pend',!${fPend})">⏳ Só pendentes</button>
+    </div>
+    <button class="btn pri" style="margin-bottom:12px" onclick="novoProduto('')">＋ Cadastrar novo produto</button>
+    <div id="plist"></div>`;
+  const b=$('#bsc');
+  let t; b.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(()=>{fBusca=b.value;plist()},140)});
+  plist();
+}
+function setF(k,v){
+  if(k==='fam')fFam=v; if(k==='dep')fDep=v; if(k==='pend')fPend=v;
+  vProds();
+}
+function plist(){
+  const q=fBusca.trim().toUpperCase();
+  let arr=S.prods.filter(p=>
+    (!fDep||p.dep===fDep) && (!fFam||p.fam===fFam) &&
+    (!q || p.nome.toUpperCase().includes(q) || String(p.codigo).includes(q)) &&
+    (!fPend || !S.totals.has(p.codigo))
+  );
+  arr.sort((a,b)=> a.fam.localeCompare(b.fam)||a.dep.localeCompare(b.dep)||a.nome.localeCompare(b.nome));
+  const el=$('#plist');
+  if(!arr.length){ el.innerHTML=`<div class="empty"><span class="ic">🔍</span>Nenhum produto encontrado.</div>`; return; }
+  let html=`<div class="tiny muted" style="margin:4px 2px 10px">${arr.length} produto(s)</div>`, g='';
+  for(const p of arr){
+    const key=p.fam+' › '+p.dep;
+    if(key!==g){ g=key; html+=`<div class="grp"><span>${esc(key)}</span></div>`; }
+    const t=S.totals.get(p.codigo);
+    html+=`<div class="item" onclick="editProduto('${esc(p.codigo)}')">
+      <div class="l">
+        <div class="nm">${esc(p.nome)}</div>
+        <div class="sub">${esc(p.codigo)} · ${p.un}</div>
+      </div>
+      <div class="r">${ t?`<div class="q" style="color:var(--ok)">${nf(t.qtd,p.un)}</div><div class="tiny muted">${p.un==='KG'?nfp(t.pec)+' pç · ':''}${t.n}×</div>`
+                        :`<span class="pill">pendente</span>` }</div>
+    </div>`;
+  }
+  el.innerHTML=html;
+}
+function novoProduto(cod){
+  closeModal();
+  modal(`<h3>Novo produto</h3>
+    <p class="tiny muted" style="margin:0 0 14px">Cadastro manual — será somado ao catálogo.</p>
+    <label class="lbl">Código *</label><input class="inp" id="e_cod" value="${esc(cod)}">
+    <label class="lbl" style="margin-top:11px">Nome *</label><input class="inp" id="e_nom">
+    <label class="lbl" style="margin-top:11px">Unidade</label>
+    <select class="inp" id="e_un"><option value="KG">KG — peso</option><option value="UN">UN — unidade</option></select>
+    <label class="lbl" style="margin-top:11px">Família</label>
+    <input class="inp" id="e_fam" list="dl_fam" value="${esc(fFam)}">
+    <datalist id="dl_fam">${S.fams().map(f=>`<option value="${esc(f)}">`).join('')}</datalist>
+    <label class="lbl" style="margin-top:11px">Departamento</label>
+    <input class="inp" id="e_dep" list="dl_dep" value="${esc(fDep)}">
+    <datalist id="dl_dep">${S.deps().map(d=>`<option value="${esc(d)}">`).join('')}</datalist>
+    <div class="row" style="margin-top:16px">
+      <button class="btn gh" onclick="closeModal()">Cancelar</button>
+      <button class="btn pri" onclick="saveProduto(false)">Salvar</button>
+    </div>`);
+  setTimeout(()=>{ const f=$(cod?'#e_nom':'#e_cod'); if(f) f.focus(); },60);
+  ['e_cod','e_nom','e_fam','e_dep'].forEach(id=>{
+    const e=$('#'+id);
+    if(e) e.addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ev.preventDefault();saveProduto(false)} });
+  });
+}
+function editProduto(cod){
+  const p=S.byCode.get(String(cod).toUpperCase()); if(!p) return;
+  const t=S.totals.get(p.codigo);
+  modal(`<h3>${esc(p.nome)}</h3>
+    <p class="tiny muted" style="margin:0 0 14px">CÓD ${esc(p.codigo)} ${t?`· contado ${nf(t.qtd,p.un)} ${p.un}`:'· não contado'}</p>
+    <input type="hidden" id="e_cod" value="${esc(p.codigo)}">
+    <label class="lbl">Nome</label><input class="inp" id="e_nom" value="${esc(p.nome)}">
+    <label class="lbl" style="margin-top:11px">Unidade de medida</label>
+    <select class="inp" id="e_un">
+      <option value="KG"${p.un==='KG'?' selected':''}>KG — peso</option>
+      <option value="UN"${p.un==='UN'?' selected':''}>UN — unidade</option></select>
+    <label class="lbl" style="margin-top:11px">Família</label>
+    <input class="inp" id="e_fam" list="dl_fam" value="${esc(p.fam)}">
+    <datalist id="dl_fam">${S.fams().map(f=>`<option value="${esc(f)}">`).join('')}</datalist>
+    <label class="lbl" style="margin-top:11px">Departamento</label>
+    <input class="inp" id="e_dep" list="dl_dep" value="${esc(p.dep)}">
+    <datalist id="dl_dep">${S.deps().map(d=>`<option value="${esc(d)}">`).join('')}</datalist>
+    <div class="row" style="margin-top:16px">
+      <button class="btn gh" onclick="closeModal()">Fechar</button>
+      <button class="btn pri" onclick="saveProduto(true)">Salvar</button>
+    </div>`);
+}
+async function saveProduto(edit){
+  const codigo=$('#e_cod').value.trim(), nome=$('#e_nom').value.trim();
+  if(!codigo||!nome){ toast('Código e nome são obrigatórios','er'); return; }
+  if(!edit && S.byCode.has(codigo.toUpperCase())){ toast('Código já cadastrado','er'); return; }
+  const antigo=S.byCode.get(codigo.toUpperCase());
+  const p={codigo,nome,un:$('#e_un').value,fam:$('#e_fam').value.trim()||'GERAL',
+           dep:$('#e_dep').value.trim()||'GERAL',norm:S.norm(codigo),
+           em:(antigo&&antigo.em)||Date.now()};   // marca quando entrou, para o aviso de catálogo
+  await DB.put('produtos',p);
+  S.prods=await DB.all('produtos'); S.index();
+  closeModal();
+  toast(edit?'Produto atualizado':'Cadastrado — envie o catálogo aos outros aparelhos','ok');
+  const hsub=$('#hsub'); if(hsub) hsub.textContent=`${S.prods.length} produtos cadastrados`;
+  // cadastrou no meio da contagem? já abre o item para contar, sem voltar ao início
+  if(!edit && VIEW==='count'){ vCount(); lookup(codigo); return; }
+  render();
+}
+
+/* ====================== VIEW 3 — HISTÓRICO =========================== */
+let hDep='', hUser='';
+function vHist(){
+  const users=[...new Set(S.counts.map(c=>c.usuario))];
+  $('#main').innerHTML=`
+    <div class="chips">
+      <button class="chip ${!hDep?'on':''}" onclick="hDep='';vHist()">Todos deptos</button>
+      ${S.deps().map(d=>`<button class="chip ${hDep===d?'on':''}" onclick="hDep='${esc(d)}';vHist()">${esc(d)}</button>`).join('')}
+    </div>
+    ${users.length>1?`<div class="chips">
+      <button class="chip ${!hUser?'on':''}" onclick="hUser='';vHist()">Todos usuários</button>
+      ${users.map(u=>`<button class="chip ${hUser===u?'on':''}" onclick="hUser='${esc(u)}';vHist()">👤 ${esc(u)}</button>`).join('')}
+    </div>`:''}
+    <div id="hlist"></div>`;
+  let arr=S.counts.filter(c=>(!hDep||c.dep===hDep)&&(!hUser||c.usuario===hUser)).sort((a,b)=>b.ts-a.ts);
+  const el=$('#hlist');
+  if(!arr.length){ el.innerHTML=`<div class="empty"><span class="ic">🕑</span>Sem registros no filtro.</div>`; return; }
+  let html=`<div class="tiny muted" style="margin:4px 2px 10px">${arr.length} lançamento(s) individuais</div>`, d='';
+  for(const c of arr.slice(0,600)){
+    const day=dOnly(c.ts);
+    if(day!==d){ d=day; html+=`<div class="grp"><span>${day}</span></div>`; }
+    html+=`<div class="item">
+      <div class="l">
+        <div class="nm">${esc(c.nome)}</div>
+        <div class="sub">${hOnly(c.ts)} · ${esc(c.codigo)} · ${esc(c.dep)} · 👤 ${esc(c.usuario)}${c.dev&&c.dev!==S.dev.nome?` · 📱 ${esc(c.dev)}`:''}</div>
+      </div>
+      <div class="r"><div class="q">${nf(c.qtd,c.un)}<span class="muted tiny"> ${c.un}</span></div>
+        ${c.un==='KG'?`<div class="tiny muted">${nfp(pcs(c))} pç</div>`:''}</div>
+      <button class="btn sm gh dg" onclick="undo(${c.id})">✕</button>
+    </div>`;
+  }
+  if(arr.length>600) html+=`<div class="tiny muted" style="text-align:center;padding:12px">Exibindo 600 de ${arr.length}. Exporte para ver tudo.</div>`;
+  el.innerHTML=html;
+}
+
+/* ====================== VIEW 4 — RELATÓRIO =========================== */
+let repUn='KG', repDep=false;
+function vRep(){
+  const linhas=resumo();
+  const totKG=linhas.filter(l=>l.un==='KG').reduce((s,l)=>s+l.qtd,0);
+  const totUN=linhas.filter(l=>l.un==='UN').reduce((s,l)=>s+l.qtd,0);
+  const pcKG=linhas.filter(l=>l.un==='KG').reduce((s,l)=>s+l.pec,0);
+  const pcTot=linhas.reduce((s,l)=>s+l.pec,0);
+  const pend=S.prods.length-S.totals.size;
+  const pct=S.prods.length? Math.round(S.totals.size/S.prods.length*100):0;
+
+  // progresso por departamento
+  const byDep={};
+  for(const p of S.prods){
+    byDep[p.dep]=byDep[p.dep]||{tot:0,ok:0,fam:p.fam};
+    byDep[p.dep].tot++; if(S.totals.has(p.codigo)) byDep[p.dep].ok++;
+  }
+  $('#main').innerHTML=`
+    <div class="card">
+      <div class="lbl">Progresso do inventário</div>
+      <div style="display:flex;align-items:baseline;gap:8px"><div style="font-size:34px;font-weight:800">${pct}%</div>
+        <div class="tiny muted">${S.totals.size} de ${S.prods.length} itens · ${pend} pendentes</div></div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="v" style="color:#8fd0ff">${nf(totKG,'KG')}</div><div class="k">Total KG</div></div>
+      <div class="stat"><div class="v" style="color:#ffd479">${nf(totUN,'UN')}</div><div class="k">Total UN</div></div>
+      <div class="stat"><div class="v" style="color:#c3a6ff">${nfp(pcTot)}</div><div class="k">Total peças</div></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="v">${nfp(pcKG)}</div><div class="k">Peças em KG</div></div>
+      <div class="stat"><div class="v">${nfp(pcTot-pcKG)}</div><div class="k">Peças em UN</div></div>
+      <div class="stat"><div class="v">${S.counts.length}</div><div class="k">Lançamentos</div></div>
+    </div>
+
+    <button class="btn ok" onclick="exportar()">⬇️ Exportar inventário para Excel (.xlsx)</button>
+
+    <div class="sec-title">Progresso por departamento</div>
+    ${Object.entries(byDep).sort().map(([d,v])=>{
+      const pc=Math.round(v.ok/v.tot*100);
+      return `<div class="card" style="padding:11px 13px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><div style="font-weight:650;font-size:13.5px">${esc(d)}</div>
+               <div class="tiny muted">${esc(v.fam)}</div></div>
+          <div style="text-align:right"><div style="font-weight:800;font-size:14px">${pc}%</div>
+               <div class="tiny muted">${v.ok}/${v.tot}</div></div>
+        </div><div class="bar"><i style="width:${pc}%"></i></div></div>`;
+    }).join('')}
+
+    <div class="sec-title">Participação no estoque</div>
+    <div class="chips">
+      ${(()=>{
+        const uns=[...new Set(linhas.map(l=>l.un))];              // só mostra o que existe
+        if(!uns.includes(repUn) && uns.length) repUn=uns[0];
+        return uns.length>1 ? uns.map(u=>`<button class="chip ${repUn===u?'on':''}" onclick="repUn='${u}';vRep()">
+          ${u==='KG'?'⚖️ Produtos em KG':'📦 Produtos em UN'}</button>`).join('') : '';
+      })()}
+      <button class="chip ${repDep?'on':''}" onclick="repDep=!repDep;vRep()">
+        ${repDep?'📐 % dentro do depto.':'📐 % do total'}</button>
+    </div>
+    ${(()=>{
+      const arr=linhas.filter(l=>l.un===repUn).sort((a,b)=>(repDep?b.pctDep-a.pctDep:b.pctUn-a.pctUn));
+      if(!arr.length) return `<div class="empty"><span class="ic">📈</span>Nada contado em ${repUn} ainda.</div>`;
+      return `<div class="tiny muted" style="margin:0 2px 10px">
+        ${repDep? 'Fatia de cada produto dentro do próprio departamento.'
+                : `Fatia de cada produto no total de ${repUn} contado (${nf(repUn==='KG'?totKG:totUN,repUn)} ${repUn}).`}</div>`
+        + arr.map(l=>{
+        const pc=(repDep?l.pctDep:l.pctUn)*100;
+        return `<div class="card" style="padding:10px 12px;margin-bottom:7px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+            <div style="min-width:0;flex:1">
+              <div class="nm" style="font-weight:650;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.nome)}</div>
+              <div class="tiny muted">${esc(l.dep)} · ${nf(l.qtd,l.un)} ${l.un}${l.un==='KG'?` · ${nfp(l.pec)} pç`:''}</div>
+            </div>
+            <div style="font-weight:800;font-size:16px;font-variant-numeric:tabular-nums;color:var(--acc2)">${pctBR(pc/100)}</div>
+          </div>
+          <div class="bar"><i style="width:${Math.min(100,pc)}%;background:linear-gradient(90deg,var(--acc),var(--acc2))"></i></div>
+        </div>`;
+      }).join('');
+    })()}
+
+    <div class="sec-title">Totais consolidados por produto</div>
+    ${linhas.length? linhas.map(l=>`
+      <div class="item">
+        <div class="l"><div class="nm">${esc(l.nome)}</div>
+          <div class="sub">${esc(l.codigo)} · ${esc(l.fam)} › ${esc(l.dep)} · ${l.n}×</div>
+          <div class="sub" style="color:var(--acc2)">${pctBR(l.pctUn)} do ${l.un} · ${pctBR(l.pctDep)} do depto.</div></div>
+        <div class="r"><div class="q">${nf(l.qtd,l.un)}<span class="muted tiny"> ${l.un}</span></div>
+          ${l.un==='KG'?`<div class="tiny muted">${nfp(l.pec)} pç</div>`:''}</div>
+      </div>`).join('')
+     : `<div class="empty"><span class="ic">📊</span>Nada contado ainda.</div>`}`;
+}
+/* Consolida as contagens por produto e calcula a participação de cada item no estoque.
+   Duas bases, porque somar KG com UN não produz um número com significado:
+     pctUn  = fatia do produto no total da sua unidade (todos os KG, ou todos os UN)
+     pctDep = fatia do produto dentro do seu departamento, na mesma unidade      */
+function resumo(){
+  const grupos=new Map();
+  for(const c of S.counts){                       // uma passada só — aguenta milhares de lançamentos
+    let g=grupos.get(c.codigo);
+    if(!g){ g={list:[],users:new Set()}; grupos.set(c.codigo,g); }
+    g.list.push(c); g.users.add(c.usuario);
+  }
+  const out=[];
+  for(const [cod,g] of grupos){
+    const t=S.totals.get(cod);
+    const p=S.byCode.get(String(cod).toUpperCase()) || g.list[0];
+    g.list.sort((a,b)=>a.ts-b.ts);
+    out.push({codigo:cod, nome:p.nome||cod, un:p.un||'UN', fam:p.fam||'', dep:p.dep||'',
+              qtd:t.qtd, pec:t.pec, n:t.n, last:t.last, first:g.list[0].ts,
+              media: t.n? t.qtd/t.n : 0, lanc:g.list,
+              usuario:[...g.users].join(', ')});
+  }
+  const tUn={}, tDep={};
+  for(const l of out){
+    tUn[l.un]=(tUn[l.un]||0)+l.qtd;
+    const k=l.dep+'|'+l.un; tDep[k]=(tDep[k]||0)+l.qtd;
+  }
+  for(const l of out){
+    const k=l.dep+'|'+l.un;
+    l.pctUn  = tUn[l.un]? l.qtd/tUn[l.un] : 0;
+    l.pctDep = tDep[k]?   l.qtd/tDep[k]   : 0;
+  }
+  out.sort((a,b)=>a.fam.localeCompare(b.fam)||a.dep.localeCompare(b.dep)||a.nome.localeCompare(b.nome));
+  out.totUn=tUn; out.totDep=tDep;
+  return out;
+}
+
+/* ====================== VIEW 5 — AJUSTES ============================= */
+function vCfg(){
+  const sw=(k,lab,desc)=>`<div class="item" onclick="tog('${k}')">
+      <div class="l"><div class="nm">${lab}</div><div class="sub">${desc}</div></div>
+      <div class="r"><span class="pill ${S.cfg[k]?'ac':''}">${S.cfg[k]?'ATIVO':'OFF'}</span></div></div>`;
+  $('#main').innerHTML=`
+    <div class="card">
+      <label class="lbl">Operador responsável</label>
+      <input class="inp" id="cfg_user" value="${esc(S.user)}" placeholder="Nome de quem está contando">
+      <button class="btn pri" style="margin-top:10px" onclick="S.setUser($('#cfg_user').value.trim()).then(()=>{$('#uname').textContent=S.user||'—';toast('Operador salvo','ok')})">Salvar operador</button>
+    </div>
+
+    <div class="sec-title">Preferências</div>
+    ${sw('beep','🔊 Som de confirmação','Bipe agudo ao ler, grave ao errar')}
+    ${sw('vibra','📳 Vibração','Retorno tátil no celular')}
+    ${sw('balanca','⚖️ Etiquetas de balança','Lê EAN-13 de peso (2+PLU+gramas) e preenche o KG automaticamente')}
+    ${sw('pecas','🔢 Contar peças nos itens KG','Campo extra ao lado do peso: quantas peças formaram aquele peso. Desligado, grava sempre 1')}
+    ${sw('fixar','📌 Produto fixo na tela','Após gravar, o produto continua aberto para várias pesagens seguidas. Troca só com Esc ou lendo outro código')}
+
+    <div class="sec-title">Licença de uso</div>
+    <div class="card" style="border-color:${LIC.dias<=30?'#7a5a12':'#2c5f4a'}">
+      <div style="font-weight:700;font-size:14px;color:${LIC.dias<=30?'var(--warn)':'var(--ok)'}">
+        ${LIC.dias<=30?'⏳ Licença perto do vencimento':'🔓 Aparelho liberado'}
+      </div>
+      <div class="tiny muted" style="margin-top:6px;line-height:1.6">
+        Licenciado para <b>${esc(LIC.para)}</b><br>
+        Válida até <b>${LIC.ate.split('-').reverse().join('/')}</b>
+        ${LIC.dias>0?`· faltam ${LIC.dias} dia(s)`:''}
+      </div>
+      <button class="btn dg" style="margin-top:11px" onclick="confirmarRemoverLicenca()">Remover ativação deste aparelho</button>
+      <div class="tiny muted" style="margin-top:7px">
+        Use ao aposentar ou vender o aparelho. Suas contagens não são apagadas, mas o app fica travado até receber uma chave de novo.
+      </div>
+    </div>
+
+    <div class="sec-title">Este aparelho</div>
+    <div class="card">
+      <label class="lbl">Nome do aparelho <span class="muted">(aparece em cada lançamento)</span></label>
+      <input class="inp" id="cfg_dev" value="${esc(S.dev.nome)}" placeholder="Ex.: Coletor 1 — Câmara fria">
+      <div class="tiny muted" style="margin-top:7px">Código interno: <b>${esc(S.dev.id)}</b> · usado para juntar as contagens sem duplicar</div>
+      <button class="btn pri" style="margin-top:10px" onclick="salvarDev()">Salvar nome</button>
+    </div>
+
+    <div class="sec-title">Segurança dos dados</div>
+    <div class="card" style="border-color:${S.persist?'#2c5f4a':'#6b2233'}">
+      <div style="font-weight:700;font-size:14px;color:${S.persist?'var(--ok)':'#ff6b81'}">
+        ${S.persist? '🔒 Armazenamento protegido' : '⚠️ Armazenamento SEM proteção'}
+      </div>
+      <div class="tiny muted" style="margin-top:6px;line-height:1.5">
+        ${S.persist
+          ? 'O navegador marcou os dados como persistentes: não serão descartados por falta de espaço. Só some se alguém limpar os dados manualmente.'
+          : 'O navegador ainda não garantiu a persistência. Instale o app na tela inicial e use-o algumas vezes — no iPhone isso é o que impede o Safari de apagar tudo depois de 7 dias.'}
+      </div>
+      ${S.persist?'':'<button class="btn" style="margin-top:10px" onclick="protegerArmazenamento().then(()=>vCfg())">Solicitar proteção agora</button>'}
+    </div>
+    <div class="card" style="${S.naoExportados()?'border-color:#7a5a12':''}">
+      <div style="font-weight:700;font-size:14px">${S.naoExportados()? '📤 Há contagem não exportada' : '✓ Tudo exportado'}</div>
+      <div class="tiny muted" style="margin-top:6px">
+        ${S.naoExportados()
+          ? `<b style="color:var(--warn)">${S.naoExportados()} lançamento(s)</b> ainda não saíram deste aparelho.`
+          : 'Nenhum lançamento pendente de exportação.'}
+        ${S.lastExport? `<br>Última exportação: ${dt(S.lastExport)}` : '<br>Nunca exportado.'}
+      </div>
+    </div>
+    <button class="btn" onclick="verSnapshots()">💾 Cópias de segurança internas</button>
+
+    <div class="sec-title">📥 Receber de outro aparelho</div>
+    <div class="card">
+      <input type="file" id="frec" accept=".json,.xlsx,.xls" multiple class="hide" onchange="receberArquivo(this)">
+      <button class="btn pri" onclick="$('#frec').click()">Receber arquivo</button>
+      <div class="tiny muted" style="margin-top:10px;line-height:1.6">
+        Um botão para tudo — o app reconhece o arquivo sozinho:<br>
+        <b>Catálogo</b> → soma os produtos novos ao cadastro daqui.<br>
+        <b>Backup completo</b> → pergunta se é para somar ou para substituir tudo (mudança de aparelho).<br>
+        <b>Planilha do app</b> → soma os lançamentos.<br>
+        Pode selecionar vários de uma vez, e reenviar o mesmo arquivo não duplica nada.
+      </div>
+    </div>
+
+    <div class="sec-title">📤 Enviar para outro aparelho</div>
+    <div class="card">
+      <div class="tiny muted" style="line-height:1.6;margin-bottom:11px">
+        Cadastrou um produto aqui e os outros celulares precisam dele? Envie o <b>catálogo</b>:
+        arquivo pequeno, só com os ${S.prods.length} produtos, sem levar contagem junto.
+      </div>
+      ${S.catalogoPendente()?`<div class="tiny" style="color:var(--warn);font-weight:700;margin-bottom:9px">
+        ⚠️ ${S.catalogoPendente()} produto(s) cadastrado(s) aqui ainda não foram enviados aos outros aparelhos.</div>`:''}
+      <button class="btn ${S.catalogoPendente()?'pri':''}" onclick="exportarCatalogo()">🏷️ Enviar catálogo de produtos</button>
+      <div style="height:8px"></div>
+      <button class="btn" onclick="backup()">📦 Backup completo (produtos + contagens)</button>
+      <div class="tiny muted" style="margin-top:10px;line-height:1.6">
+        O <b>backup completo</b> é o que leva este aparelho inteiro para outro celular, ou para o app
+        hospedado em outro endereço. No destino, use <i>Receber arquivo</i> e escolha <i>Substituir tudo</i>.
+      </div>
+    </div>
+
+    <div class="sec-title">Catálogo de produtos</div>
+    <div class="card">
+      <div class="tiny muted" style="margin-bottom:10px">${S.prods.length} produtos · ${S.fams().length} famílias · ${S.deps().length} departamentos</div>
+      ${(()=>{const n=S.prods.filter(p=>p.un!=='KG').length; return n
+        ? `<div class="tiny" style="color:var(--warn);font-weight:700;margin-bottom:9px">⚠️ ${n} produto(s) ainda estão em UN.</div>
+           <button class="btn pri" style="margin-bottom:8px" onclick="todosParaKG()">⚖️ Converter todos para KG</button>`
+        : `<div class="tiny" style="color:var(--ok);font-weight:700;margin-bottom:9px">⚖️ Todos os produtos são contados em KG.</div>`;})()}
+      <input type="file" id="fimp" accept=".xlsx,.xls,.csv" class="hide" onchange="importar(this)">
+      <button class="btn" onclick="$('#fimp').click()">📥 Importar planilha de produtos (.xlsx)</button>
+      <div class="tiny muted" style="margin:9px 0 0">
+        Aceita o mesmo formato da planilha original (Família / DEPARTAMENTO / Cód. Barra / Descrição)
+        ou colunas nomeadas: <b>codigo, nome, unidade, familia, departamento</b>.
+      </div>
+    </div>
+
+    <div class="sec-title">Dados do inventário</div>
+    <button class="btn ok" onclick="exportar()">⬇️ Exportar para Excel (.xlsx)</button>
+    <div style="height:8px"></div>
+    <button class="btn dg" onclick="zerar()">🗑️ Zerar contagens (mantém produtos)</button>
+
+    <div class="tiny muted" style="text-align:center;margin-top:22px;line-height:1.6">
+      Inventário v1.7 · funciona 100% offline<br>
+      Dados gravados no próprio aparelho — nada é enviado pela internet.
+    </div>`;
+}
+async function tog(k){ S.cfg[k]=!S.cfg[k]; await S.saveCfg(); vCfg(); }
+async function salvarDev(){
+  const v=$('#cfg_dev').value.trim();
+  if(!v){ toast('Dê um nome ao aparelho','er'); return; }
+  S.dev.nome=v; await DB.put('meta',{k:'dev',v:S.dev});
+  toast('Nome do aparelho salvo','ok'); vCfg();
+}
+
+/* ------------------------ Importação XLSX ---------------------------- */
+function importar(input){
+  const f=input.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=async e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false});
+      const novos=parseRows(rows);
+      if(!novos.length){ toast('Nenhum produto reconhecido na planilha','er'); return; }
+      await DB.bulk('produtos',novos);
+      S.prods=await DB.all('produtos'); S.index();
+      toast(`${novos.length} produtos importados`,'ok'); vCfg();
+    }catch(err){ console.error(err); toast('Erro ao ler a planilha','er'); }
+    input.value='';
+  };
+  rd.readAsArrayBuffer(f);
+}
+function parseRows(rows){
+  const out=[], seen=new Set();
+  // formato A: cabeçalho com colunas nomeadas
+  const hi=rows.findIndex(r=>r.some(c=>/^c[óo]d/i.test(String(c).trim())));
+  const head=hi>=0? rows[hi].map(c=>String(c).trim().toLowerCase()) : [];
+  const col=re=>head.findIndex(h=>re.test(h));
+  const iCod=col(/c[óo]d/), iNom=col(/nome|descri/), iUn=col(/unid|^un$|medida/),
+        iFam=col(/fam[íi]lia/), iDep=col(/departa/);
+  const nomeado = iCod>=0 && iNom>=0 && (iFam>=0||iDep>=0);
+
+  let fam='GERAL', dep='GERAL';
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i]; if(!r) continue;
+    const a=String(r[0]??'').trim();
+    if(!a) continue;
+    const up=a.toUpperCase();
+    if(/^FAM[ÍI]LIA\s*:/.test(up)){ fam=a.split(':')[1].trim(); continue; }
+    if(/^DEPARTAMENTO\s*:/.test(up)){ dep=a.split(':')[1].trim(); continue; }
+    if(i===hi || /^c[óo]d/i.test(a)) continue;
+    const codigo = nomeado? String(r[iCod]??'').trim() : a;
+    const nome   = String((nomeado? r[iNom] : r[1])??'').replace(/\s+/g,' ').trim();
+    if(!codigo||!nome) continue;
+    if(seen.has(codigo)) continue; seen.add(codigo);
+    const f = nomeado&&iFam>=0? (String(r[iFam]).trim()||fam) : fam;
+    const d = nomeado&&iDep>=0? (String(r[iDep]).trim()||dep) : dep;
+    let un = nomeado&&iUn>=0? String(r[iUn]).trim().toUpperCase() : '';
+    if(!/^(KG|UN)/.test(un)) un = 'KG';   // sem coluna de unidade, assume peso
+    un = un.startsWith('KG')?'KG':'UN';
+    out.push({codigo,nome,un,fam:f,dep:d,norm:S.norm(codigo)});
+  }
+  return out;
+}
+
+/* ------------------------ Exportação XLSX ----------------------------
+   Planilha formatada: cabeçalhos vermelhos, linhas de total pretas,
+   formatos numéricos por unidade e percentual de participação.        */
+const XV='FF8C1C13', XP='FF161616', XZ='FFF2F2F2', XB='FFD9D9D9';
+const FMT_KG='#,##0.000', FMT_UN='#,##0', FMT_PC='0.0%';
+
+function xTit(ws,r,txt,sub){
+  ws.getCell(r,1).value=txt;
+  ws.getCell(r,1).font={bold:true,size:16,color:{argb:XV}};
+  if(sub){ ws.getCell(r+1,1).value=sub; ws.getCell(r+1,1).font={italic:true,size:10,color:{argb:'FF666666'}}; }
+}
+function xHead(ws,r,cols){
+  cols.forEach((t,i)=>{
+    const c=ws.getCell(r,i+1);
+    c.value=t;
+    c.font={bold:true,color:{argb:'FFFFFFFF'},size:10};
+    c.fill={type:'pattern',pattern:'solid',fgColor:{argb:XV}};
+    c.alignment={vertical:'middle',horizontal:i<2?'left':'center',wrapText:true};
+    c.border={bottom:{style:'thin',color:{argb:XV}}};
+  });
+  ws.getRow(r).height=26;
+}
+function xTotal(ws,r,n){
+  for(let i=1;i<=n;i++){
+    const c=ws.getCell(r,i);
+    c.font={bold:true,color:{argb:'FFFFFFFF'}};
+    c.fill={type:'pattern',pattern:'solid',fgColor:{argb:XP}};
+  }
+}
+function xZebra(ws,r,n){
+  for(let i=1;i<=n;i++){
+    ws.getCell(r,i).fill={type:'pattern',pattern:'solid',fgColor:{argb:XZ}};
+    ws.getCell(r,i).border={bottom:{style:'hair',color:{argb:XB}}};
+  }
+}
+
+async function exportar(){
+  if(!S.counts.length){ toast('Nada para exportar ainda','er'); return; }
+  if(typeof ExcelJS==='undefined'){ toast('Biblioteca de Excel não carregada — abra o app online uma vez','er'); return; }
+  toast('Montando a planilha…');
+
+  const res=resumo();
+  const ordem=[...S.counts].sort((a,b)=>a.ts-b.ts);
+  const ini=ordem[0].ts, fim=ordem[ordem.length-1].ts;
+  const users=[...new Set(S.counts.map(c=>c.usuario))].join(', ');
+  const totKG=res.totUn.KG||0, totUN=res.totUn.UN||0;
+  const totPec=res.reduce((s,l)=>s+l.pec,0);
+  const pctFeito=S.prods.length? S.totals.size/S.prods.length : 0;
+
+  const wb=new ExcelJS.Workbook();
+  wb.creator='App de Contagem de Estoque'; wb.created=new Date();
+
+  /* ---------------- Aba 1: RESUMO ---------------- */
+  const w1=wb.addWorksheet('RESUMO',{views:[{state:'frozen',ySplit:11}]});
+  w1.columns=[{width:42},{width:16},{width:20},{width:24},{width:7},{width:11},{width:9},
+              {width:17},{width:13},{width:15},{width:17},{width:60}];
+  xTit(w1,1,'CONTAGEM DE ESTOQUE — INVENTÁRIO');
+  const info=[['Licenciado para',LIC.para||'—'],
+              ['Início da contagem',dtC(ini)],['Fim da contagem',dtC(fim)],['Responsável(is)',users||'—'],
+              ['Total de pesagens',S.counts.length],
+              ['Produtos contados',`${S.totals.size} de ${S.prods.length}  (${pctBR(pctFeito)} do cadastro)`],
+              ['Totais',`${nf(totKG,'KG')} KG  ·  ${nf(totUN,'UN')} UN  ·  ${nfp(totPec)} peças`]];
+  info.forEach(([k,v],i)=>{
+    w1.getCell(2+i,1).value=k; w1.getCell(2+i,1).font={bold:true,size:10,color:{argb:'FF444444'}};
+    w1.getCell(2+i,2).value=v; w1.getCell(2+i,2).font={size:10};
+  });
+  xHead(w1,11,['PRODUTO','CÓDIGO','FAMÍLIA','DEPARTAMENTO','UN','PESAGENS','PEÇAS',
+               'QUANTIDADE TOTAL','% DA UNIDADE','% DO DEPTO.','MÉDIA POR PESAGEM',
+               'COMO FOI CONTADO (na ordem)']);
+  let r=12;
+  res.forEach((l,i)=>{
+    const seq=l.lanc.map(c=>nf(c.qtd,l.un));
+    const comoFoi = seq.length<=40 ? seq.join('  +  ')
+                  : seq.slice(0,40).join('  +  ')+`  …  (+${seq.length-40} lançamentos)`;
+    w1.getRow(r).values=[l.nome,l.codigo,l.fam,l.dep,l.un,l.n,l.pec,l.qtd,l.pctUn,l.pctDep,l.media,comoFoi];
+    const f = l.un==='KG'? FMT_KG : FMT_UN;
+    w1.getCell(r,2).numFmt='@';                       // código como texto: preserva zeros à esquerda
+    w1.getCell(r,8).numFmt=f;  w1.getCell(r,11).numFmt=f;
+    w1.getCell(r,9).numFmt=FMT_PC; w1.getCell(r,10).numFmt=FMT_PC;
+    w1.getCell(r,7).numFmt=FMT_UN;
+    [5,6,7,9,10].forEach(c=>w1.getCell(r,c).alignment={horizontal:'center'});
+    if(i%2) xZebra(w1,r,12);
+    r++;
+  });
+  w1.autoFilter={from:{row:11,column:1},to:{row:r-1,column:12}};
+  r++;
+  w1.getRow(r).values=['TOTAL EM QUILOS','','','','KG',
+    res.filter(l=>l.un==='KG').reduce((s,l)=>s+l.n,0),
+    res.filter(l=>l.un==='KG').reduce((s,l)=>s+l.pec,0), totKG,1,'','',''];
+  w1.getCell(r,8).numFmt=FMT_KG; w1.getCell(r,9).numFmt=FMT_PC; xTotal(w1,r,12); r++;
+  w1.getRow(r).values=['TOTAL EM UNIDADES','','','','UN',
+    res.filter(l=>l.un==='UN').reduce((s,l)=>s+l.n,0),
+    res.filter(l=>l.un==='UN').reduce((s,l)=>s+l.pec,0), totUN,1,'','',''];
+  w1.getCell(r,8).numFmt=FMT_UN; w1.getCell(r,9).numFmt=FMT_PC; xTotal(w1,r,12); r+=2;
+  w1.getCell(r,1).value=`Gerado pelo app de contagem de estoque em ${dtC(Date.now())}`;
+  w1.getCell(r,1).font={italic:true,size:9,color:{argb:'FF888888'}};
+
+  /* ------------- Aba 2: HISTÓRICO POR PRODUTO ------------- */
+  const w2=wb.addWorksheet('HISTÓRICO POR PRODUTO');
+  w2.columns=[{width:8},{width:13},{width:11},{width:16},{width:7},{width:10},{width:22}];
+  xTit(w2,1,'HISTÓRICO DAS CONTAGENS, PRODUTO A PRODUTO',
+        'Cada pesagem ou contagem que foi registrada, na ordem em que aconteceu.');
+  let r2=4;
+  for(const l of res){
+    w2.getCell(r2,1).value=`${l.nome}   ·   CÓD ${l.codigo}   ·   ${l.fam} › ${l.dep}`;
+    for(let i=1;i<=7;i++){
+      w2.getCell(r2,i).fill={type:'pattern',pattern:'solid',fgColor:{argb:XV}};
+      w2.getCell(r2,i).font={bold:true,color:{argb:'FFFFFFFF'}};
+    }
+    r2++;
+    xHead(w2,r2,['#','DATA','HORA','QUANTIDADE','UN','PEÇAS','USUÁRIO']);
+    w2.getRow(r2).height=18;
+    for(let i=1;i<=7;i++){
+      w2.getCell(r2,i).fill={type:'pattern',pattern:'solid',fgColor:{argb:XB}};
+      w2.getCell(r2,i).font={bold:true,size:10,color:{argb:'FF222222'}};
+    }
+    r2++;
+    const f=l.un==='KG'?FMT_KG:FMT_UN;
+    l.lanc.forEach((c,i)=>{
+      w2.getRow(r2).values=[i+1,dOnly(c.ts),hOnly(c.ts),Number(c.qtd),c.un,pcs(c),c.usuario];
+      w2.getCell(r2,4).numFmt=f; w2.getCell(r2,6).numFmt=FMT_UN;
+      [1,3,5,6].forEach(x=>w2.getCell(r2,x).alignment={horizontal:'center'});
+      if(i%2) xZebra(w2,r2,7);
+      r2++;
+    });
+    w2.getRow(r2).values=['Total do produto',`${l.n} lançamento${l.n>1?'s':''}`,'',l.qtd,l.un,l.pec,''];
+    w2.getCell(r2,4).numFmt=f; xTotal(w2,r2,7); r2++;
+    w2.getRow(r2).values=['Média por lançamento','','',l.media,l.un,'',''];
+    w2.getCell(r2,4).numFmt=f;
+    for(let i=1;i<=7;i++) w2.getCell(r2,i).font={italic:true,size:10,color:{argb:'FF555555'}};
+    r2+=2;
+  }
+
+  /* ---------------- Aba 3: LANÇAMENTOS ---------------- */
+  const w3=wb.addWorksheet('LANÇAMENTOS',{views:[{state:'frozen',ySplit:3}]});
+  w3.columns=[{width:6},{width:12},{width:10},{width:16},{width:42},{width:20},{width:24},
+              {width:14},{width:6},{width:8},{width:20},{width:22},{width:22}];
+  xTit(w3,1,'LANÇAMENTOS NA ORDEM EM QUE FORAM DIGITADOS');
+  xHead(w3,3,['#','DATA','HORA','CÓDIGO','PRODUTO','FAMÍLIA','DEPARTAMENTO',
+              'QUANTIDADE','UN','PEÇAS','USUÁRIO','APARELHO','ID']);
+  let r3=4;
+  ordem.forEach((c,i)=>{
+    w3.getRow(r3).values=[i+1,dOnly(c.ts),hOnly(c.ts),String(c.codigo),c.nome,c.fam,c.dep,
+                          Number(c.qtd),c.un,pcs(c),c.usuario,c.dev||S.dev.nome,S.uidOf(c)];
+    w3.getCell(r3,4).numFmt='@'; w3.getCell(r3,13).numFmt='@';
+    w3.getCell(r3,8).numFmt = c.un==='KG'?FMT_KG:FMT_UN;
+    w3.getCell(r3,10).numFmt=FMT_UN;
+    [1,3,9,10].forEach(x=>w3.getCell(r3,x).alignment={horizontal:'center'});
+    w3.getCell(r3,13).font={size:8,color:{argb:'FFAAAAAA'}};
+    if(i%2) xZebra(w3,r3,13);
+    r3++;
+  });
+  w3.autoFilter={from:{row:3,column:1},to:{row:r3-1,column:13}};
+  w3.getRow(r3).values=['TOTAL','','','',`${S.counts.length} lançamentos`,'','',
+                        totKG+totUN,'KG+UN',totPec,'','',''];
+  w3.getCell(r3,8).numFmt=FMT_KG; xTotal(w3,r3,13);
+  w3.getCell(r3+1,1).value='A coluna QUANTIDADE mistura KG e UN — use o filtro da coluna UN para separar. A coluna ID identifica cada lançamento e evita duplicidade ao consolidar aparelhos.';
+  w3.getCell(r3+1,1).font={italic:true,size:9,color:{argb:'FF888888'}};
+
+  /* ---------------- Aba 4: CONSOLIDAÇÃO ---------------- */
+  const w5=wb.addWorksheet('CONSOLIDAÇÃO');
+  w5.columns=[{width:28},{width:14},{width:12},{width:16},{width:12},{width:10},{width:34},{width:30}];
+  xTit(w5,1,'CONSOLIDAÇÃO POR APARELHO E OPERADOR',
+       'Confira aqui se a contagem de todos os coletores entrou.');
+
+  const agrupar=(campo)=>{
+    const m=new Map();
+    for(const c of S.counts){
+      const k=c[campo]||'—';
+      let g=m.get(k);
+      if(!g){ g={n:0,kg:0,un:0,pec:0,prods:new Set(),outros:new Set(),ini:Infinity,fim:0}; m.set(k,g); }
+      g.n++; g.pec+=pcs(c); g.prods.add(c.codigo);
+      if(c.un==='KG') g.kg+=Number(c.qtd)||0; else g.un+=Number(c.qtd)||0;
+      g.outros.add(campo==='dev'? c.usuario : (c.dev||S.dev.nome));
+      g.ini=Math.min(g.ini,c.ts); g.fim=Math.max(g.fim,c.ts);
+    }
+    return [...m.entries()].sort((a,b)=>b[1].n-a[1].n);
+  };
+  let r5=4;
+  [['POR APARELHO','dev','APARELHO','OPERADORES'],
+   ['POR OPERADOR','usuario','OPERADOR','APARELHOS']].forEach(([tit,campo,c1,c8])=>{
+    w5.getCell(r5,1).value=tit;
+    w5.getCell(r5,1).font={bold:true,size:12,color:{argb:XV}}; r5++;
+    xHead(w5,r5,[c1,'LANÇAMENTOS','PRODUTOS','TOTAL KG','TOTAL UN','PEÇAS','PERÍODO',c8]); r5++;
+    const g=agrupar(campo);
+    g.forEach(([k,v],i)=>{
+      w5.getRow(r5).values=[k,v.n,v.prods.size,v.kg,v.un,v.pec,
+                            `${dtC(v.ini)}  →  ${dtC(v.fim)}`,[...v.outros].join(', ')];
+      w5.getCell(r5,4).numFmt=FMT_KG; w5.getCell(r5,5).numFmt=FMT_UN; w5.getCell(r5,6).numFmt=FMT_UN;
+      [2,3,6].forEach(x=>w5.getCell(r5,x).alignment={horizontal:'center'});
+      if(i%2) xZebra(w5,r5,8);
+      r5++;
+    });
+    w5.getRow(r5).values=['TOTAL',S.counts.length,S.totals.size,totKG,totUN,totPec,'',''];
+    w5.getCell(r5,4).numFmt=FMT_KG; w5.getCell(r5,5).numFmt=FMT_UN; w5.getCell(r5,6).numFmt=FMT_UN;
+    xTotal(w5,r5,8); r5+=2;
+  });
+
+  // produtos que apareceram em mais de um aparelho — possível dupla contagem
+  const porProd=new Map();
+  for(const c of S.counts){
+    let g=porProd.get(c.codigo);
+    if(!g){ g={nome:c.nome,un:c.un,devs:new Map()}; porProd.set(c.codigo,g); }
+    const d=c.dev||S.dev.nome;
+    g.devs.set(d,(g.devs.get(d)||0)+(Number(c.qtd)||0));
+  }
+  const dobrados=[...porProd.entries()].filter(([,g])=>g.devs.size>1);
+  w5.getCell(r5,1).value='PRODUTOS CONTADOS EM MAIS DE UM APARELHO';
+  w5.getCell(r5,1).font={bold:true,size:12,color:{argb:XV}}; r5++;
+  w5.getCell(r5,1).value = dobrados.length
+    ? 'O app somou tudo. Confira se as áreas não se sobrepuseram — pode ser divisão de trabalho legítima ou dupla contagem.'
+    : 'Nenhum. Cada produto foi contado em um único aparelho.';
+  w5.getCell(r5,1).font={italic:true,size:10,color:{argb:dobrados.length?'FFB00020':'FF2C7A4B'}}; r5++;
+  if(dobrados.length){
+    xHead(w5,r5,['PRODUTO','CÓDIGO','UN','TOTAL SOMADO','APARELHOS','','','']); r5++;
+    dobrados.forEach(([cod,g],i)=>{
+      const soma=[...g.devs.values()].reduce((s,v)=>s+v,0);
+      w5.getRow(r5).values=[g.nome,String(cod),g.un,soma,
+        [...g.devs.entries()].map(([d,v])=>`${d}: ${nf(v,g.un)}`).join('   |   '),'','',''];
+      w5.getCell(r5,2).numFmt='@';
+      w5.getCell(r5,4).numFmt = g.un==='KG'?FMT_KG:FMT_UN;
+      if(i%2) xZebra(w5,r5,5);
+      r5++;
+    });
+  }
+
+  /* ---------------- Aba 4: NÃO CONTADOS ---------------- */
+  const pend=S.prods.filter(p=>!S.totals.has(p.codigo))
+    .sort((a,b)=>a.fam.localeCompare(b.fam)||a.dep.localeCompare(b.dep)||a.nome.localeCompare(b.nome));
+  const w4=wb.addWorksheet('NÃO CONTADOS',{views:[{state:'frozen',ySplit:3}]});
+  w4.columns=[{width:42},{width:16},{width:20},{width:24},{width:7},{width:16}];
+  xTit(w4,1,`PRODUTOS NÃO CONTADOS — ${pend.length} item(ns)`);
+  xHead(w4,3,['PRODUTO','CÓDIGO','FAMÍLIA','DEPARTAMENTO','UN','SITUAÇÃO']);
+  let r4=4;
+  pend.forEach((p,i)=>{
+    w4.getRow(r4).values=[p.nome,String(p.codigo),p.fam,p.dep,p.un,'NÃO CONTADO'];
+    w4.getCell(r4,2).numFmt='@';
+    w4.getCell(r4,6).font={color:{argb:'FFB00020'},bold:true};
+    if(i%2) xZebra(w4,r4,6);
+    r4++;
+  });
+  if(pend.length) w4.autoFilter={from:{row:3,column:1},to:{row:r4-1,column:6}};
+
+  const buf=await wb.xlsx.writeBuffer();
+  const d=new Date(), pad=n=>String(n).padStart(2,'0');
+  const nome=`Inventario_${S.dev.nome.replace(/\W+/g,'-')}_${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.xlsx`;
+  await baixar(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),nome);
+  S.lastExport=Date.now(); await DB.put('meta',{k:'lastExport',v:S.lastExport});
+  toast('Planilha gerada','ok');
+}
+const slug=s=>String(s).replace(/\W+/g,'-').replace(/^-|-$/g,'');
+const hoje8=()=>new Date().toISOString().slice(0,10);
+
+/* Catálogo: só os produtos. Arquivo pequeno, feito para circular entre os
+   aparelhos toda vez que alguém cadastra um item novo durante o inventário. */
+async function exportarCatalogo(){
+  const dados={tipo:'catalogo', versao:1, origem:S.dev.nome,
+               geradoEm:new Date().toISOString(), produtos:S.prods};
+  await baixar(new Blob([JSON.stringify(dados)],{type:'application/json'}),
+         `catalogo_${S.prods.length}-produtos_${hoje8()}.json`);
+  S.lastCatalogo=Date.now(); DB.put('meta',{k:'lastCatalogo',v:S.lastCatalogo});
+  toast(`Catálogo com ${S.prods.length} produtos gerado`,'ok');
+  if(VIEW==='cfg') setTimeout(vCfg,300);
+}
+
+/* Backup completo: tudo que o aparelho sabe. Serve de cópia de segurança
+   e é o que leva o app inteiro para outro celular ou outro endereço. */
+async function backup(){
+  const dados={tipo:'completo', versao:2, aparelho:S.dev, operador:S.user,
+               cfg:S.cfg, lastExport:S.lastExport, exportadoEm:new Date().toISOString(),
+               produtos:S.prods, contagens:S.counts};
+  await baixar(new Blob([JSON.stringify(dados)],{type:'application/json'}),
+         `backup-completo_${slug(S.dev.nome)}_${hoje8()}.json`);
+  toast('Backup completo gerado','ok');
+}
+
+/* ---------- aplicar um catálogo recebido ----------
+   Acrescenta o que falta e atualiza o que mudou. Não apaga produto nenhum:
+   item que só existe aqui continua existindo.                              */
+async function aplicarCatalogo(prods){
+  const novos=[], mudados=[];
+  for(const raw of prods||[]){
+    const codigo=String(raw.codigo||'').trim();
+    if(!codigo || !raw.nome) continue;
+    const p={codigo, nome:String(raw.nome), un:raw.un==='KG'?'KG':'UN',
+             fam:raw.fam||'GERAL', dep:raw.dep||'GERAL', norm:S.norm(codigo)};
+    const atual=S.byCode.get(codigo.toUpperCase());
+    if(!atual) novos.push(p);
+    else if(atual.nome!==p.nome||atual.un!==p.un||atual.fam!==p.fam||atual.dep!==p.dep) mudados.push(p);
+  }
+  const grava=[...novos,...mudados];
+  if(grava.length){ await DB.bulk('produtos',grava); S.prods=await DB.all('produtos'); S.index(); }
+  return {novos:novos.length, mudados:mudados.length};
+}
+
+/* ---------- migração: substituir tudo por um backup completo ----------
+   O aparelho novo passa a ser cópia fiel do antigo. Mantém o próprio código
+   interno para que, se os dois continuarem contando, os lançamentos não colidam. */
+async function restaurarCompleto(d){
+  await snapshot('antes de substituir tudo');
+  await DB.clear('produtos'); await DB.clear('contagens');
+  if(d.produtos&&d.produtos.length)
+    await DB.bulk('produtos', d.produtos.map(p=>({...p, codigo:String(p.codigo), norm:S.norm(p.codigo)})));
+  if(d.contagens&&d.contagens.length)
+    await DB.bulk('contagens', d.contagens.map(c=>({...c, codigo:String(c.codigo), qtd:parseNum(c.qtd)})));
+  if(d.cfg) { S.cfg=Object.assign(S.cfg,d.cfg); await DB.put('meta',{k:'cfg',v:S.cfg}); }
+  if(d.operador){ S.user=d.operador; await DB.put('meta',{k:'user',v:S.user}); }
+  if(d.aparelho&&d.aparelho.nome){
+    S.dev.nome=d.aparelho.nome;                    // adota o nome, mantém o código local
+    await DB.put('meta',{k:'dev',v:S.dev});
+  }
+  S.lastExport=d.lastExport||0; await DB.put('meta',{k:'lastExport',v:S.lastExport});
+  await S.load();
+  return {produtos:S.prods.length, contagens:S.counts.length};
+}
+const ehIOS=()=>/iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+
+/* O Safari do iPhone ignora o atributo "download": o arquivo não cai na
+   pasta, abre numa aba ou simplesmente não acontece nada. Lá usamos a
+   folha de compartilhamento do sistema, que deixa salvar em Arquivos,
+   mandar no WhatsApp ou por e-mail.                                      */
+async function baixar(blob,nome){
+  try{
+    const f=new File([blob],nome,{type:blob.type||'application/octet-stream'});
+    if(navigator.canShare && navigator.canShare({files:[f]})){
+      await navigator.share({files:[f], title:nome});
+      return true;
+    }
+  }catch(e){
+    if(e && e.name==='AbortError') return false;     // o usuário fechou a folha
+    console.warn('compartilhamento indisponível',e);
+  }
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=nome; a.rel='noopener';
+  document.body.appendChild(a); a.click(); a.remove();
+  if(ehIOS()){
+    modal(`<h3>Salvando o arquivo</h3>
+      <p class="tiny muted" style="line-height:1.7">Se o iPhone não tiver aberto a janela de
+      compartilhamento, toque no botão abaixo, depois em <b>Compartilhar</b> e escolha
+      <b>Salvar em Arquivos</b>.</p>
+      <a class="btn pri" style="margin-top:12px;text-decoration:none" href="${url}" target="_blank"
+         rel="noopener" onclick="closeModal()">Abrir ${esc(nome)}</a>
+      <button class="btn gh" style="margin-top:8px" onclick="closeModal()">Fechar</button>`);
+  }
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+  return true;
+}
+
+/* ---------- conversão do catálogo para KG ----------
+   Roda uma única vez por aparelho, na primeira abertura desta versão:
+   põe todos os produtos em quilo e zera as contagens, para o inventário
+   começar limpo e sem registros com a unidade antiga.                   */
+async function migracaoKG(){
+  const m=await DB.get('meta','migracaoKG');
+  if(m && m.v) return null;
+  const naoKG=S.prods.filter(p=>p.un!=='KG');
+  const tinha=S.counts.length;
+  if(tinha) await snapshot('antes da conversão para KG');   // recuperável, por garantia
+  if(naoKG.length) await DB.bulk('produtos', naoKG.map(p=>({...p, un:'KG'})));
+  if(tinha) await DB.clear('contagens');
+  await DB.put('meta',{k:'migracaoKG',v:Date.now()});
+  await S.load();
+  return {produtos:naoKG.length, contagens:tinha};
+}
+let MIG_PEND=null;   // aviso de conversão que não pôde aparecer por causa do portão
+function avisoMigracao(mig){
+  modal(`<h3>Catálogo convertido para quilo</h3>
+    <p class="tiny muted" style="margin:0 0 6px;line-height:1.8">
+      <b style="color:var(--ok)">${mig.produtos}</b> produto(s) passaram de UN para <b>KG</b>.<br>
+      ${mig.contagens? `<b>${mig.contagens}</b> lançamento(s) anteriores foram apagados para o inventário começar limpo.
+        Se precisar deles, estão em <i>Ajustes → Cópias de segurança internas</i>.`
+        : 'Nenhuma contagem anterior para apagar.'}<br>
+      Agora todos os ${S.prods.length} produtos são contados por peso.
+    </p>
+    <button class="btn pri" style="margin-top:14px" onclick="fecharMigracao()">Entendi</button>`);
+}
+function fecharMigracao(){ closeModal(); if(!S.user) askUser(); }
+// reaplicável a qualquer momento: útil se um catálogo antigo reintroduzir UN
+async function todosParaKG(){
+  const naoKG=S.prods.filter(p=>p.un!=='KG');
+  if(!naoKG.length){ toast('Todos os produtos já estão em KG'); return; }
+  await DB.bulk('produtos', naoKG.map(p=>({...p, un:'KG'})));
+  S.prods=await DB.all('produtos'); S.index();
+  toast(`${naoKG.length} produto(s) convertido(s) para KG`,'ok');
+  if(VIEW==='cfg') vCfg();
+}
+
+/* ---------- proteção do armazenamento ---------- */
+async function protegerArmazenamento(){
+  try{
+    if(!navigator.storage || !navigator.storage.persist){ S.persist=false; return false; }
+    let ok=await navigator.storage.persisted();
+    if(!ok) ok=await navigator.storage.persist();
+    S.persist=ok; return ok;
+  }catch(e){ S.persist=false; return false; }
+}
+
+/* ---------- cópias automáticas dentro do app ----------
+   Não substituem a exportação, mas seguram um "Zerar" acidental
+   ou uma exclusão errada no meio do inventário.                */
+async function snapshot(motivo){
+  try{
+    const m=await DB.get('meta','snaps');
+    const lista=(m&&m.v)||[];
+    lista.push({em:Date.now(), motivo, n:S.counts.length, dados:S.counts});
+    while(lista.length>5) lista.shift();          // guarda as 5 mais recentes
+    await DB.put('meta',{k:'snaps',v:lista});
+  }catch(e){ console.warn('snapshot falhou',e); }
+}
+async function verSnapshots(){
+  const m=await DB.get('meta','snaps');
+  const lista=((m&&m.v)||[]).slice().reverse();
+  modal(`<h3>Cópias de segurança internas</h3>
+    <p class="tiny muted" style="margin:0 0 14px">Salvas automaticamente a cada 50 lançamentos e antes de operações de risco.
+    Ficam no próprio aparelho — não substituem a exportação da planilha.</p>
+    ${lista.length? lista.map((s,i)=>`
+      <div class="item">
+        <div class="l"><div class="nm">${s.n} lançamentos</div>
+          <div class="sub">${dt(s.em)} · ${esc(s.motivo)}</div></div>
+        <button class="btn sm" onclick="restaurarSnap(${lista.length-1-i})">Restaurar</button>
+      </div>`).join('')
+     : '<div class="empty"><span class="ic">💾</span>Nenhuma cópia ainda.</div>'}
+    <button class="btn gh" style="margin-top:12px" onclick="closeModal()">Fechar</button>`);
+}
+async function restaurarSnap(i){
+  const m=await DB.get('meta','snaps');
+  const s=((m&&m.v)||[])[i]; if(!s) return;
+  await snapshot('antes de restaurar');
+  const r=await S.mesclar(s.dados);
+  closeModal(); toast(`${r.novos} lançamento(s) recuperado(s)`,'ok'); render();
+}
+
+/* ---------- receber arquivos ---------- */
+const lerTexto=f=>new Promise((ok,er)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=er;r.readAsText(f)});
+const lerBin  =f=>new Promise((ok,er)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=er;r.readAsArrayBuffer(f)});
+
+/* Modal que devolve a escolha do usuário como promessa.
+   Fica em window de propósito: os onclick embutidos nos botões só enxergam
+   propriedades do objeto global, não declarações com let/const.            */
+function perguntar(html,opcoes){
+  return new Promise(res=>{
+    window.__resp=v=>{ window.__resp=null; closeModal(); res(v); };
+    modal(html+opcoes.map(o=>
+      `<button class="btn ${o.classe||''}" style="margin-top:8px" onclick="window.__resp('${o.valor}')">${o.label}</button>`
+    ).join(''));
+  });
+}
+function tipoDo(d){
+  if(d && d.tipo) return d.tipo;
+  if(Array.isArray(d)) return 'contagens';
+  if(d && d.contagens) return 'completo';
+  if(d && d.produtos)  return 'catalogo';
+  return '?';
+}
+
+async function receberArquivo(input){
+  const files=[...input.files]; input.value='';
+  if(!files.length) return;
+  const res={cat:{novos:0,mudados:0}, lanc:{novos:0,rep:0}, aps:new Set(), subst:null, erros:[]};
+
+  for(const f of files){
+    try{
+      if(/\.(xlsx|xls)$/i.test(f.name)){
+        modal(`<h3>Lendo planilha…</h3><p class="tiny muted">${esc(f.name)}</p>`);
+        const r=await S.mesclar(lerLancamentosXlsx(await lerBin(f)));
+        res.lanc.novos+=r.novos; res.lanc.rep+=r.repetidos; r.aparelhos.forEach(a=>res.aps.add(a));
+        continue;
+      }
+      const d=JSON.parse(await lerTexto(f));
+      const tipo=tipoDo(d);
+
+      if(tipo==='catalogo'){
+        modal(`<h3>Recebendo catálogo…</h3><p class="tiny muted">${esc(f.name)}</p>`);
+        const r=await aplicarCatalogo(d.produtos);
+        res.cat.novos+=r.novos; res.cat.mudados+=r.mudados;
+        continue;
+      }
+
+      if(tipo==='completo'){
+        const temDados=S.counts.length>0;
+        const modo= temDados ? await perguntar(
+          `<h3>Backup completo de “${esc((d.aparelho&&d.aparelho.nome)||'outro aparelho')}”</h3>
+           <p class="tiny muted" style="margin:0 0 4px">
+             ${(d.produtos||[]).length} produtos · ${(d.contagens||[]).length} lançamentos
+             ${d.exportadoEm? `· gerado em ${dt(new Date(d.exportadoEm).getTime())}`:''}</p>
+           <p class="tiny muted">Este aparelho já tem <b>${S.counts.length}</b> lançamento(s). O que fazer?</p>`,
+          [{label:'➕ Somar ao que já existe aqui', valor:'somar', classe:'pri'},
+           {label:'🔄 Substituir tudo (mudar de aparelho)', valor:'subst', classe:'dg'},
+           {label:'Cancelar este arquivo', valor:'nada', classe:'gh'}]
+        ) : 'subst';
+
+        if(modo==='nada') continue;
+        if(modo==='subst'){
+          modal('<h3>Transferindo…</h3><p class="tiny muted">Substituindo os dados deste aparelho.</p>');
+          res.subst=await restaurarCompleto(d);
+          continue;
+        }
+        modal(`<h3>Somando…</h3><p class="tiny muted">${esc(f.name)}</p>`);
+        const rc=await aplicarCatalogo(d.produtos);
+        res.cat.novos+=rc.novos; res.cat.mudados+=rc.mudados;
+        const r=await S.mesclar(d.contagens||[]);
+        res.lanc.novos+=r.novos; res.lanc.rep+=r.repetidos; r.aparelhos.forEach(a=>res.aps.add(a));
+        continue;
+      }
+
+      if(tipo==='contagens'){
+        const r=await S.mesclar(Array.isArray(d)?d:d.contagens);
+        res.lanc.novos+=r.novos; res.lanc.rep+=r.repetidos; r.aparelhos.forEach(a=>res.aps.add(a));
+        continue;
+      }
+      res.erros.push(`${f.name}: formato não reconhecido`);
+    }catch(err){ console.error(err); res.erros.push(`${f.name}: ${err.message||'erro ao ler'}`); }
+  }
+
+  const linhas=[];
+  if(res.subst) linhas.push(`<b style="color:var(--ok)">Aparelho transferido.</b> Agora com ${res.subst.produtos} produtos e ${res.subst.contagens} lançamentos.`);
+  if(res.cat.novos||res.cat.mudados)
+    linhas.push(`Catálogo: <b style="color:var(--ok)">${res.cat.novos}</b> produto(s) novo(s), <b>${res.cat.mudados}</b> atualizado(s).`);
+  if(res.lanc.novos||res.lanc.rep)
+    linhas.push(`Contagens: <b style="color:var(--ok)">${res.lanc.novos}</b> somada(s), <b>${res.lanc.rep}</b> já existiam e foram ignoradas.`);
+  if(res.aps.size) linhas.push(`Aparelhos recebidos: ${[...res.aps].map(esc).join(', ')}`);
+  res.erros.forEach(e=>linhas.push(`<span style="color:#ff6b81">${esc(e)}</span>`));
+  if(!linhas.length) linhas.push('Nada novo — este aparelho já estava em dia.');
+
+  closeModal();
+  modal(`<h3>${res.erros.length?'Recebimento concluído com avisos':'✓ Recebimento concluído'}</h3>
+    <p class="tiny muted" style="margin:0 0 6px;line-height:1.8">${linhas.join('<br>')}</p>
+    <button class="btn pri" style="margin-top:14px" onclick="closeModal();render()">Ver resultado</button>`);
+  render();
+}
+// lê a aba LANÇAMENTOS de uma planilha gerada por este app
+function lerLancamentosXlsx(buf){
+  const wb=XLSX.read(buf,{type:'array'});
+  const nome=wb.SheetNames.find(n=>/LAN[ÇC]AMENTOS/i.test(n));
+  if(!nome) throw new Error('sem aba LANÇAMENTOS');
+  // raw:true é essencial: com raw:false o SheetJS devolve "10.000" (padrão americano)
+  // para 10 KG, e o ponto seria lido como separador de milhar.
+  const rows=XLSX.utils.sheet_to_json(wb.Sheets[nome],{header:1,defval:'',raw:true});
+  const hi=rows.findIndex(r=>r.some(c=>/^c[óo]digo$/i.test(String(c).trim())));
+  if(hi<0) throw new Error('cabeçalho não encontrado');
+  const H=rows[hi].map(c=>String(c).trim().toUpperCase());
+  const ix=n=>H.indexOf(n);
+  const out=[];
+  for(let i=hi+1;i<rows.length;i++){
+    const r=rows[i];
+    const cod=String(r[ix('CÓDIGO')]??'').trim();
+    if(!cod || /^TOTAL/i.test(cod) || /^TOTAL/i.test(String(r[0]))) continue;
+    const [d,m,y]=String(r[ix('DATA')]).split('/');
+    const [hh,mm,ss]=String(r[ix('HORA')]).split(':');
+    const ts=new Date(+y,+m-1,+d,+hh||0,+mm||0,+ss||0).getTime();
+    out.push({uid:String(r[ix('ID')]||'').trim()||null, dev:String(r[ix('APARELHO')]||'importado').trim(),
+      codigo:cod, nome:String(r[ix('PRODUTO')]||''), un:String(r[ix('UN')]||'UN').toUpperCase(),
+      fam:String(r[ix('FAMÍLIA')]||''), dep:String(r[ix('DEPARTAMENTO')]||''),
+      qtd:parseNum(r[ix('QUANTIDADE')]),
+      pecas:Math.round(parseNum(r[ix('PEÇAS')]))||1,
+      usuario:String(r[ix('USUÁRIO')]||'—'), ts});
+  }
+  return out;
+}
+
+function zerar(){
+  modal(`<h3>Zerar contagens?</h3>
+    <p class="tiny muted">Os ${S.counts.length} lançamentos deste aparelho serão apagados. Os produtos permanecem.
+    ${S.naoExportados()? `<b style="color:#ff6b81">Atenção: ${S.naoExportados()} lançamento(s) ainda não foram exportados.</b>`:''}</p>
+    <p class="tiny muted" style="margin-top:10px">Para confirmar, digite <b>ZERAR</b> abaixo:</p>
+    <input class="inp" id="z_conf" autocomplete="off" placeholder="ZERAR" autocapitalize="characters">
+    <div class="row" style="margin-top:16px">
+      <button class="btn gh" onclick="closeModal()">Cancelar</button>
+      <button class="btn dg" onclick="zerarOk()">Apagar tudo</button></div>`);
+  setTimeout(()=>{const e=$('#z_conf'); if(e) e.focus()},60);
+}
+async function zerarOk(){
+  if(String($('#z_conf').value).trim().toUpperCase()!=='ZERAR'){
+    toast('Digite ZERAR para confirmar','er'); return;
+  }
+  await snapshot('antes de zerar');            // dá para voltar atrás
+  await DB.clear('contagens'); S.counts=[]; S.recalc();
+  closeModal(); toast('Contagens zeradas — recuperáveis em Cópias de segurança'); render();
+}
+
+/* --------------------------- Operador -------------------------------- */
+function askUser(){
+  modal(`<h3>Quem está contando?</h3>
+    <p class="tiny muted" style="margin:0 0 14px">O nome fica gravado em cada lançamento para auditoria.</p>
+    <input class="inp" id="m_user" value="${esc(S.user)}" placeholder="Ex.: João Silva" autocomplete="name">
+    <button class="btn pri" style="margin-top:14px" onclick="setUserOk()">Confirmar</button>`);
+  setTimeout(()=>{const e=$('#m_user'); if(e){e.focus();e.select()}},60);
+  const e=$('#m_user');
+  if(e) e.addEventListener('keydown',ev=>{ if(ev.key==='Enter') setUserOk(); });
+}
+async function setUserOk(){
+  const v=$('#m_user').value.trim();
+  if(!v){ toast('Informe o nome','er'); return; }
+  await S.setUser(v); $('#uname').textContent=v; closeModal(); toast(`Olá, ${v}`,'ok');
+  if(VIEW==='count') focusCode();
+}
+
+/* ----------------------------- Boot ---------------------------------- */
+/* Detector de leitor de código de barras.
+   Com o produto travado na tela o cursor fica no campo de quantidade — se o operador
+   dispara o leitor ali, os dígitos cairiam no peso. Leitores digitam muito rápido
+   (< 45ms por caractere), então uma rajada longa e veloz é reconhecida como leitura,
+   os caracteres são desfeitos do campo e o app troca de produto sozinho. */
+const SCAN={buf:'',t0:0,last:0,el:null,pre:''};
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape' && VIEW==='count' && CUR){ limpar(); return; }
+  const now=Date.now();
+  if(/^[0-9]$/.test(e.key)){
+    if(now-SCAN.last>60){                       // início de uma nova rajada
+      SCAN.buf=''; SCAN.t0=now; SCAN.el=document.activeElement;
+      SCAN.pre = (SCAN.el && 'value' in SCAN.el)? SCAN.el.value : '';
+    }
+    SCAN.buf+=e.key; SCAN.last=now;
+    return;
+  }
+  if(e.key==='Enter' || e.key==='Tab'){
+    const n=SCAN.buf.length, veloz = n>=8 && (now-SCAN.t0) < n*45;
+    const noCampoErrado = SCAN.el && SCAN.el.id && SCAN.el.id!=='cod';
+    if(veloz && noCampoErrado && VIEW==='count'){
+      e.preventDefault(); e.stopPropagation();
+      if('value' in SCAN.el) SCAN.el.value=SCAN.pre;   // desfaz o que o leitor digitou
+      const code=SCAN.buf; SCAN.buf='';
+      lookup(code);
+      return;
+    }
+  }
+  if(e.key.length===1 || e.key==='Enter' || e.key==='Tab') SCAN.buf='';
+},true);
+(async function(){
+  try{
+    await DB.open(); await S.load();
+  }catch(err){
+    const local=location.protocol==='file:';
+    document.body.innerHTML=`<div style="max-width:430px;margin:0 auto;padding:44px 22px;
+        color:#e9edf4;font:15px/1.6 -apple-system,system-ui,sans-serif">
+      <div style="font-size:38px;text-align:center">📦</div>
+      <h2 style="text-align:center;color:#ff6b81;margin:10px 0 14px">Precisa abrir pela internet</h2>
+      <p style="color:#9aa3b2">
+        ${local? 'Este aplicativo foi aberto como <b>arquivo local</b>. Nesse modo o navegador bloqueia o banco de dados, e sem ele não dá para guardar contagem nenhuma.'
+               : 'O navegador bloqueou o banco de dados deste endereço.'}
+      </p>
+      <p style="color:#9aa3b2">
+        No <b>iPhone</b> isso sempre acontece: tocar no arquivo abre só uma pré-visualização, que não executa o aplicativo.
+      </p>
+      <p style="color:#9aa3b2">
+        A solução é publicar o app num endereço <b>https</b> — o passo a passo está no
+        arquivo <b>COMO-ABRIR-NO-IPHONE.md</b> que veio junto. Depois de publicado, abra o
+        endereço no Safari e use <b>Compartilhar → Adicionar à Tela de Início</b>.
+      </p>
+      <p style="color:#5d6879;font-size:13px;margin-top:22px;text-align:center">
+        Endereço atual: ${esc(location.protocol)}//${esc(location.host||'arquivo local')}
+      </p></div>`;
+    return;
+  }
+  await verificarLicenca();
+  const mig=await migracaoKG();
+  await protegerArmazenamento();
+  $('#uname').textContent=S.user||'—';
+  $('#hsub').textContent=LIC.estado==='ativa'
+    ? `${esc(LIC.para)} · ${S.dev.nome}` : `${S.prods.length} produtos`;
+  render();
+  telaLicenca();
+  const temAviso = mig && (mig.produtos||mig.contagens);
+  if(LIC.estado!=='ativa'){                 // nada de modal por cima do portão
+    if(temAviso) MIG_PEND=mig;              // mostra assim que o aparelho for liberado
+    return;
+  }
+  if(temAviso) avisoMigracao(mig);
+  else if(!S.user) setTimeout(askUser,350);
+  if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+})();
+</script>
+</body>
+</html>
